@@ -2138,22 +2138,29 @@ void SpdySession::SendInitialData() {
     }
   }
   if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    static constexpr uint32_t kHeaderTableSizes[] = {4096, 8192, 16384, 32768,
-                                                     65536};
-    static constexpr uint32_t kMaxConcurrentStreams[] = {100, 128, 256, 512,
-                                                        1000};
-    static constexpr uint32_t kInitialWindowSizes[] = {65535, 131072, 262144,
-                                                       1048576, 6291456};
-    static constexpr uint32_t kMaxHeaderListSizes[] = {16384, 32768, 65536,
-                                                       131072, 262144};
+    struct ChromeH2Profile {
+      uint32_t header_table_size;
+      uint32_t max_concurrent_streams;
+      uint32_t initial_window_size;
+      uint32_t max_header_list_size;
+    };
+    static constexpr ChromeH2Profile kChromeProfiles[] = {
+        {65536, 1000, 6291456, 262144},
+        {65536, 1000, 6291456, 131072},
+        {65536, 100, 6291456, 262144},
+        {4096, 1000, 6291456, 262144},
+    };
+    static const size_t s_h2_profile_idx =
+        base::RandGenerator(std::size(kChromeProfiles));
+    const auto& profile = kChromeProfiles[s_h2_profile_idx];
     settings_map[spdy::SETTINGS_HEADER_TABLE_SIZE] =
-        kHeaderTableSizes[base::RandGenerator(5)];
+        profile.header_table_size;
     settings_map[spdy::SETTINGS_MAX_CONCURRENT_STREAMS] =
-        kMaxConcurrentStreams[base::RandGenerator(5)];
+        profile.max_concurrent_streams;
     settings_map[spdy::SETTINGS_INITIAL_WINDOW_SIZE] =
-        kInitialWindowSizes[base::RandGenerator(5)];
+        profile.initial_window_size;
     settings_map[spdy::SETTINGS_MAX_HEADER_LIST_SIZE] =
-        kMaxHeaderListSizes[base::RandGenerator(5)];
+        profile.max_header_list_size;
   }
   if (enable_http2_settings_grease_) {
     spdy::SpdySettingsId greased_id = 0x0a0a +
@@ -2175,11 +2182,13 @@ void SpdySession::SendInitialData() {
   // Make sure |session_max_recv_window_size_ - session_recv_window_size_|
   // does not underflow.
   if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    static constexpr int32_t kWindowDeltas[] = {
-        15728640, 10485760, 6291456, 4194304, 2097152};
+    static constexpr int32_t kChromeWindowDeltas[] = {
+        15663105, 15728640, 10420225};
+    static const size_t s_window_delta_idx =
+        base::RandGenerator(std::size(kChromeWindowDeltas));
     session_max_recv_window_size_ =
         session_recv_window_size_ +
-        kWindowDeltas[base::RandGenerator(5)];
+        kChromeWindowDeltas[s_window_delta_idx];
   }
   DCHECK_GE(session_max_recv_window_size_, session_recv_window_size_);
   DCHECK_GE(session_recv_window_size_, 0);

@@ -16,6 +16,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include "base/no_destructor.h"
 #include <string_view>
 #include <utility>
 
@@ -644,6 +645,12 @@ int SSLClientSocketImpl::Init() {
   }
 
   {
+    static base::NoDestructor<std::vector<uint16_t>> s_base_groups([] {
+      std::vector<uint16_t> g = {SSL_GROUP_X25519, SSL_GROUP_SECP256R1,
+                                  SSL_GROUP_SECP384R1};
+      base::RandomShuffle(g.begin(), g.end());
+      return g;
+    }());
     std::vector<uint16_t> groups;
     if (context_->config().PostQuantumKeyAgreementEnabled()) {
       const uint16_t postquantum_group =
@@ -652,10 +659,7 @@ int SSLClientSocketImpl::Init() {
               : SSL_GROUP_X25519_KYBER768_DRAFT00;
       groups.push_back(postquantum_group);
     }
-    std::vector<uint16_t> base_groups = {
-        SSL_GROUP_X25519, SSL_GROUP_SECP256R1, SSL_GROUP_SECP384R1};
-    base::RandomShuffle(base_groups.begin(), base_groups.end());
-    for (uint16_t g : base_groups)
+    for (uint16_t g : *s_base_groups)
       groups.push_back(g);
     if (!SSL_set1_group_ids(ssl_.get(), groups.data(), groups.size())) {
       return ERR_UNEXPECTED;
@@ -730,18 +734,22 @@ int SSLClientSocketImpl::Init() {
   SSL_clear_mode(ssl_.get(), mode.clear_mask);
 
   {
-    std::vector<std::string> cipher_groups = {
-        "ECDHE+AESGCM",
-        "ECDHE+CHACHA20",
-        "ECDHE+AES",
-    };
-    base::RandomShuffle(cipher_groups.begin(), cipher_groups.end());
-    std::string command;
-    for (size_t i = 0; i < cipher_groups.size(); ++i) {
-      if (i > 0)
-        command.append(":");
-      command.append(cipher_groups[i]);
-    }
+    static base::NoDestructor<std::string> s_cipher_base([] {
+      std::vector<std::string> cipher_groups = {
+          "ECDHE+AESGCM",
+          "ECDHE+CHACHA20",
+          "ECDHE+AES",
+      };
+      base::RandomShuffle(cipher_groups.begin(), cipher_groups.end());
+      std::string result;
+      for (size_t i = 0; i < cipher_groups.size(); ++i) {
+        if (i > 0)
+          result.append(":");
+        result.append(cipher_groups[i]);
+      }
+      return result;
+    }());
+    std::string command = *s_cipher_base;
     command.append(":!aPSK:!ECDSA+SHA1:!3DES");
 
     if (ssl_config_.require_ecdhe)
@@ -765,32 +773,32 @@ int SSLClientSocketImpl::Init() {
   // TODO(crbug.com/boringssl/699): Once the default is flipped in BoringSSL, we
   // no longer need to override it.
   {
-    std::vector<uint16_t> sha256_sigalgs = {
-        SSL_SIGN_ECDSA_SECP256R1_SHA256,
-        SSL_SIGN_RSA_PSS_RSAE_SHA256,
-        SSL_SIGN_RSA_PKCS1_SHA256,
-    };
-    std::vector<uint16_t> sha384_sigalgs = {
-        SSL_SIGN_ECDSA_SECP384R1_SHA384,
-        SSL_SIGN_RSA_PSS_RSAE_SHA384,
-        SSL_SIGN_RSA_PKCS1_SHA384,
-    };
-    std::vector<uint16_t> sha512_sigalgs = {
-        SSL_SIGN_RSA_PSS_RSAE_SHA512,
-        SSL_SIGN_RSA_PKCS1_SHA512,
-    };
-    base::RandomShuffle(sha256_sigalgs.begin(), sha256_sigalgs.end());
-    base::RandomShuffle(sha384_sigalgs.begin(), sha384_sigalgs.end());
-    base::RandomShuffle(sha512_sigalgs.begin(), sha512_sigalgs.end());
-    std::vector<uint16_t> verify_prefs;
-    verify_prefs.insert(verify_prefs.end(), sha256_sigalgs.begin(),
-                        sha256_sigalgs.end());
-    verify_prefs.insert(verify_prefs.end(), sha384_sigalgs.begin(),
-                        sha384_sigalgs.end());
-    verify_prefs.insert(verify_prefs.end(), sha512_sigalgs.begin(),
-                        sha512_sigalgs.end());
-    if (!SSL_set_verify_algorithm_prefs(ssl_.get(), verify_prefs.data(),
-                                        verify_prefs.size())) {
+    static base::NoDestructor<std::vector<uint16_t>> s_verify_prefs([] {
+      std::vector<uint16_t> sha256 = {
+          SSL_SIGN_ECDSA_SECP256R1_SHA256,
+          SSL_SIGN_RSA_PSS_RSAE_SHA256,
+          SSL_SIGN_RSA_PKCS1_SHA256,
+      };
+      std::vector<uint16_t> sha384 = {
+          SSL_SIGN_ECDSA_SECP384R1_SHA384,
+          SSL_SIGN_RSA_PSS_RSAE_SHA384,
+          SSL_SIGN_RSA_PKCS1_SHA384,
+      };
+      std::vector<uint16_t> sha512 = {
+          SSL_SIGN_RSA_PSS_RSAE_SHA512,
+          SSL_SIGN_RSA_PKCS1_SHA512,
+      };
+      base::RandomShuffle(sha256.begin(), sha256.end());
+      base::RandomShuffle(sha384.begin(), sha384.end());
+      base::RandomShuffle(sha512.begin(), sha512.end());
+      std::vector<uint16_t> result;
+      result.insert(result.end(), sha256.begin(), sha256.end());
+      result.insert(result.end(), sha384.begin(), sha384.end());
+      result.insert(result.end(), sha512.begin(), sha512.end());
+      return result;
+    }());
+    if (!SSL_set_verify_algorithm_prefs(ssl_.get(), s_verify_prefs->data(),
+                                        s_verify_prefs->size())) {
       return ERR_UNEXPECTED;
     }
   }
