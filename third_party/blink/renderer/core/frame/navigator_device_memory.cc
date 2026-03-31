@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/frame/navigator_device_memory.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/navigator_spoof.h"
 #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_metrics.h"
@@ -14,6 +16,13 @@
 namespace blink {
 
 float NavigatorDeviceMemory::deviceMemory() const {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed_dm = clawser::GetSpoofedDeviceMemory();
+    if (spoofed_dm > 0) {
+      return static_cast<float>(spoofed_dm);
+    }
+  }
+
   return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
 }
 

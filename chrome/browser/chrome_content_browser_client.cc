@@ -2731,6 +2731,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
   static const char* const kCommonSwitchNames[] = {
       embedder_support::kUserAgent,
       switches::kUserDataDir,  // Make logs go to the right file.
+      switches::kClawserConfig,
   };
   command_line->CopySwitchesFrom(browser_command_line, kCommonSwitchNames);
 

@@ -338,6 +338,8 @@ struct GPU_EXPORT GPUInfo {
 
   bool IsInitialized() const;
 
+  void ApplyClawserOverrides();
+
   bool UsesSwiftShader() const;
 
   unsigned int GpuCount() const;

@@ -68,6 +68,7 @@
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/third_party/quiche/src/quiche/http2/core/spdy_frame_builder.h"
 #include "net/third_party/quiche/src/quiche/http2/core/spdy_protocol.h"
+#include "clawser/clawser_config.h"
 #include "url/scheme_host_port.h"
 #include "url/url_constants.h"
 
@@ -2136,6 +2137,24 @@ void SpdySession::SendInitialData() {
       settings_map.insert(setting);
     }
   }
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    static constexpr uint32_t kHeaderTableSizes[] = {4096, 8192, 16384, 32768,
+                                                     65536};
+    static constexpr uint32_t kMaxConcurrentStreams[] = {100, 128, 256, 512,
+                                                        1000};
+    static constexpr uint32_t kInitialWindowSizes[] = {65535, 131072, 262144,
+                                                       1048576, 6291456};
+    static constexpr uint32_t kMaxHeaderListSizes[] = {16384, 32768, 65536,
+                                                       131072, 262144};
+    settings_map[spdy::SETTINGS_HEADER_TABLE_SIZE] =
+        kHeaderTableSizes[base::RandGenerator(5)];
+    settings_map[spdy::SETTINGS_MAX_CONCURRENT_STREAMS] =
+        kMaxConcurrentStreams[base::RandGenerator(5)];
+    settings_map[spdy::SETTINGS_INITIAL_WINDOW_SIZE] =
+        kInitialWindowSizes[base::RandGenerator(5)];
+    settings_map[spdy::SETTINGS_MAX_HEADER_LIST_SIZE] =
+        kMaxHeaderListSizes[base::RandGenerator(5)];
+  }
   if (enable_http2_settings_grease_) {
     spdy::SpdySettingsId greased_id = 0x0a0a +
                                       0x1000 * base::RandGenerator(0xf + 1) +
@@ -2155,6 +2174,13 @@ void SpdySession::SendInitialData() {
   // Prepare initial WINDOW_UPDATE frame.
   // Make sure |session_max_recv_window_size_ - session_recv_window_size_|
   // does not underflow.
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    static constexpr int32_t kWindowDeltas[] = {
+        15728640, 10485760, 6291456, 4194304, 2097152};
+    session_max_recv_window_size_ =
+        session_recv_window_size_ +
+        kWindowDeltas[base::RandGenerator(5)];
+  }
   DCHECK_GE(session_max_recv_window_size_, session_recv_window_size_);
   DCHECK_GE(session_recv_window_size_, 0);
   DCHECK_EQ(0, session_unacked_recv_window_bytes_);

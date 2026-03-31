@@ -5,6 +5,9 @@
 #include "third_party/blink/renderer/modules/mediastream/media_devices.h"
 
 #include <algorithm>
+
+#include "clawser/clawser_config.h"
+#include "clawser/media_devices_spoof.h"
 #include <utility>
 
 #include "base/feature_list.h"
@@ -1287,6 +1290,32 @@ void MediaDevices::DevicesEnumerated(
   if (!script_state || !ExecutionContext::From(script_state) ||
       ExecutionContext::From(script_state)->IsContextDestroyed()) {
     return;
+  }
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::vector<clawser::SpoofedMediaDevice> spoofed_devices =
+        clawser::GetSpoofedMediaDevices();
+    if (!spoofed_devices.empty()) {
+      MediaDeviceInfoVector media_devices;
+      for (const auto& dev : spoofed_devices) {
+        mojom::blink::MediaDeviceType device_type;
+        if (dev.kind == "audioinput") {
+          device_type = mojom::blink::MediaDeviceType::kMediaAudioInput;
+        } else if (dev.kind == "audiooutput") {
+          device_type = mojom::blink::MediaDeviceType::kMediaAudioOutput;
+        } else {
+          device_type = mojom::blink::MediaDeviceType::kMediaVideoInput;
+        }
+        media_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
+            String::FromUTF8(dev.device_id),
+            String::FromUTF8(dev.label),
+            String::FromUTF8(dev.group_id),
+            device_type));
+      }
+      result_tracker->Resolve(media_devices);
+      tracer->End();
+      return;
+    }
   }
 
   DCHECK_EQ(static_cast<wtf_size_t>(

@@ -1,0 +1,63 @@
+source_set("clawser") {
+  sources = [
+    "audio_noise.cc",
+    "audio_noise.h",
+    "canvas_noise.cc",
+    "canvas_noise.h",
+    "client_rects_noise.cc",
+    "client_rects_noise.h",
+    "clawser_config.cc",
+    "clawser_config.h",
+    "dns_spoof.cc",
+    "dns_spoof.h",
+    "font_spoof.cc",
+    "font_spoof.h",
+    "gpu_info_spoof.cc",
+    "gpu_info_spoof.h",
+    "hardware_profiles.cc",
+    "hardware_profiles.h",
+    "media_devices_spoof.cc",
+    "media_devices_spoof.h",
+    "navigator_spoof.cc",
+    "navigator_spoof.h",
+    "screen_spoof.cc",
+    "screen_spoof.h",
+    "timezone_spoof.cc",
+    "timezone_spoof.h",
+    "webgl_spoof.cc",
+    "webgl_spoof.h",
+    "webrtc_spoof.cc",
+    "webrtc_spoof.h",
+  ]
+
+  deps = [
+    "//base",
+    "//third_party/icu",
+  ]
+
+  public_configs = [
+    "//third_party/khronos:khronos_headers",
+  ]
+
+  visibility = [
+    "//base:*",
+    "//chrome/browser:*",
+    "//chrome/common:*",
+    "//content/browser:*",
+    "//content/child:*",
+    "//content/common:*",
+    "//content/renderer:*",
+    "//net/url_request:*",
+    "//gpu/config:*",
+    "//gpu/command_buffer/service:*",
+    "//net:*",
+    "//net/dns:*",
+    "//third_party/blink/renderer/core:*",
+    "//third_party/blink/renderer/modules:*",
+    "//third_party/blink/renderer/platform:*",
+    "//third_party/blink/renderer/*",
+    "//third_party/webrtc/*",
+    "//third_party/webrtc:*",
+    "//v8:*",
+  ]
+}

@@ -27,6 +27,8 @@
 
 #include <tuple>
 
+#include "clawser/clawser_config.h"
+
 #include "build/build_config.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
@@ -101,7 +103,25 @@ void SpeechSynthesis::OnSetVoiceList(
 }
 
 const HeapVector<Member<SpeechSynthesisVoice>>& SpeechSynthesis::getVoices() {
-  // Kick off initialization here to ensure voice list gets populated.
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    const auto& config =
+        clawser::ClawserConfigManager::GetInstance().GetConfig();
+    if (!config.speech_voices.empty()) {
+      voice_list_.clear();
+      for (const auto& voice_config : config.speech_voices) {
+        auto mojom_voice = mojom::blink::SpeechSynthesisVoice::New();
+        mojom_voice->voice_uri = String::FromUTF8(voice_config.name);
+        mojom_voice->name = String::FromUTF8(voice_config.name);
+        mojom_voice->lang = String::FromUTF8(voice_config.lang);
+        mojom_voice->is_local_service = true;
+        mojom_voice->is_default = voice_list_.empty();
+        voice_list_.push_back(
+            MakeGarbageCollected<SpeechSynthesisVoice>(std::move(mojom_voice)));
+      }
+      return voice_list_;
+    }
+  }
+
   std::ignore = TryEnsureMojomSynthesis();
   RecordVoicesForIdentifiability();
   return voice_list_;

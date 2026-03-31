@@ -12,6 +12,8 @@
 
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "clawser/clawser_config.h"
+#include "clawser/timezone_spoof.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/files/file_path.h"
 #include "base/i18n/base_i18n_switches.h"
@@ -150,6 +152,22 @@ void SetICUDefaultLocale(const std::string& locale_string) {
                                           base::debug::CrashKeySize::Size256);
   base::debug::SetCrashKeyString(crash_key_locale, locale_string);
 #endif
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string spoofed_locale = clawser::GetSpoofedLocale();
+    if (!spoofed_locale.empty()) {
+      icu::Locale spoofed_icu_locale(spoofed_locale.c_str());
+      UErrorCode error_code = U_ZERO_ERROR;
+      if (!spoofed_icu_locale.isBogus()) {
+        icu::Locale::setDefault(spoofed_icu_locale, error_code);
+        if (U_SUCCESS(error_code)) {
+          g_icu_text_direction = UNKNOWN_DIRECTION;
+          return;
+        }
+      }
+    }
+  }
+
   icu::Locale locale(ICULocaleName(locale_string).c_str());
   UErrorCode error_code = U_ZERO_ERROR;
   const char* lang = locale.getLanguage();

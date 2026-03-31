@@ -15,4 +15,8 @@ blink_modules_sources("permissions") {
     "permissions.cc",
     "permissions.h",
   ]
+
+  deps = [
+    "//clawser",
+  ]
 }

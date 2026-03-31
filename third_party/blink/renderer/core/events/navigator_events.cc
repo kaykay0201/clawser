@@ -30,6 +30,8 @@
 
 #include "third_party/blink/renderer/core/events/navigator_events.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/navigator_spoof.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/navigator.h"
@@ -38,6 +40,13 @@
 namespace blink {
 
 int32_t NavigatorEvents::maxTouchPoints(Navigator& navigator) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed_mtp = clawser::GetSpoofedMaxTouchPoints();
+    if (spoofed_mtp >= 0) {
+      return spoofed_mtp;
+    }
+  }
+
   LocalDOMWindow* window = navigator.DomWindow();
   return window ? window->GetFrame()->GetSettings()->GetMaxTouchPoints() : 0;
 }

@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/css/media_values.h"
 
+#include "clawser/clawser_config.h"
 #include "third_party/blink/public/common/css/scripting.h"
 #include "third_party/blink/renderer/core/css/css_resolution_units.h"
 #include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
@@ -163,6 +164,11 @@ double MediaValues::CalculateDynamicViewportHeight(LocalFrame* frame) {
 }
 
 int MediaValues::CalculateDeviceWidth(LocalFrame* frame) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int w = clawser::ClawserConfigManager::GetInstance().GetConfig().screen.width;
+    if (w > 0)
+      return w;
+  }
   DCHECK(frame && frame->View() && frame->GetSettings() && frame->GetPage());
   const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
@@ -175,6 +181,11 @@ int MediaValues::CalculateDeviceWidth(LocalFrame* frame) {
 }
 
 int MediaValues::CalculateDeviceHeight(LocalFrame* frame) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int h = clawser::ClawserConfigManager::GetInstance().GetConfig().screen.height;
+    if (h > 0)
+      return h;
+  }
   DCHECK(frame && frame->View() && frame->GetSettings() && frame->GetPage());
   const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
@@ -399,6 +410,11 @@ mojom::blink::PreferredColorScheme MediaValues::CalculatePreferredColorScheme(
   DCHECK(frame->GetSettings());
   DCHECK(frame->GetDocument());
   DCHECK(frame->GetPage());
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    return mojom::blink::PreferredColorScheme::kLight;
+  }
+
   const MediaFeatureOverrides* overrides =
       frame->GetPage()->GetMediaFeatureOverrides();
   std::optional<mojom::blink::PreferredColorScheme> override_value =
@@ -441,6 +457,11 @@ mojom::blink::PreferredContrast MediaValues::CalculatePreferredContrast(
 bool MediaValues::CalculatePrefersReducedMotion(LocalFrame* frame) {
   DCHECK(frame);
   DCHECK(frame->GetSettings());
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    return false;
+  }
+
   const MediaFeatureOverrides* overrides =
       frame->GetPage()->GetMediaFeatureOverrides();
   std::optional<bool> override_value =

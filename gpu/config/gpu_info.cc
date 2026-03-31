@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include "clawser/gpu_info_spoof.h"
 #include "base/logging.h"
 #include "base/notreached.h"
 #include "build/build_config.h"
@@ -214,6 +215,33 @@ GPUInfo::GPUInfo()
       passthrough_cmd_decoder(false),
       jpeg_decode_accelerator_supported(false),
       subpixel_font_rendering(true) {
+}
+
+void GPUInfo::ApplyClawserOverrides() {
+  if (!clawser::ShouldSpoofGpuInfo())
+    return;
+
+  clawser::GpuHardwareIds ids = clawser::GetSpoofedGpuHardwareIds();
+  if (ids.vendor_id != 0) {
+    gpu.vendor_id = ids.vendor_id;
+    gpu.device_id = ids.device_id;
+  }
+
+  std::string driver_vendor = clawser::GetSpoofedDriverVendor();
+  if (!driver_vendor.empty())
+    gpu.driver_vendor = driver_vendor;
+
+  std::string driver_version = clawser::GetSpoofedDriverVersion();
+  if (!driver_version.empty())
+    gpu.driver_version = driver_version;
+
+  std::string spoofed_gl_vendor = clawser::GetSpoofedGlVendor();
+  if (!spoofed_gl_vendor.empty())
+    this->gl_vendor = spoofed_gl_vendor;
+
+  std::string spoofed_gl_renderer = clawser::GetSpoofedGlRenderer();
+  if (!spoofed_gl_renderer.empty())
+    this->gl_renderer = spoofed_gl_renderer;
 }
 
 GPUInfo::GPUInfo(const GPUInfo& other) = default;

@@ -25,6 +25,8 @@
 
 #include "third_party/blink/renderer/modules/webaudio/offline_audio_context.h"
 
+#include "clawser/audio_noise.h"
+#include "clawser/clawser_config.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "media/base/audio_glitch_info.h"
@@ -373,8 +375,26 @@ void OfflineAudioContext::FireCompletionEvent() {
       return;
     }
 
-    // Call the offline rendering completion event listener and resolve the
-    // promise too.
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      uint64_t audio_seed =
+          clawser::ClawserConfigManager::GetInstance()
+              .GetConfig()
+              .noise_seeds.audio;
+      if (audio_seed != 0) {
+        for (unsigned ch = 0; ch < rendered_buffer->numberOfChannels(); ++ch) {
+          NotShared<DOMFloat32Array> channel_data =
+              rendered_buffer->getChannelData(ch);
+          if (channel_data) {
+            clawser::ApplyAudioNoise(
+                static_cast<float*>(channel_data->Data()),
+                channel_data->length(),
+                audio_seed ^
+                    (static_cast<uint64_t>(ch) + 0x0FF11EADD10C000ULL));
+          }
+        }
+      }
+    }
+
     DispatchEvent(*OfflineAudioCompletionEvent::Create(rendered_buffer));
     complete_resolver_->Resolve(rendered_buffer);
   } else {

@@ -9,4 +9,8 @@ blink_modules_sources("donottrack") {
     "navigator_do_not_track.cc",
     "navigator_do_not_track.h",
   ]
+
+  deps = [
+    "//clawser",
+  ]
 }

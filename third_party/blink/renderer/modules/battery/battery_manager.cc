@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/battery/battery_manager.h"
 
+#include "clawser/clawser_config.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
@@ -80,18 +81,46 @@ ScriptPromise<BatteryManager> BatteryManager::StartRequest(
 }
 
 bool BatteryManager::charging() {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (!clawser::ClawserConfigManager::GetInstance()
+             .GetConfig()
+             .battery.enabled) {
+      return true;
+    }
+  }
   return battery_status_.Charging();
 }
 
 double BatteryManager::chargingTime() {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (!clawser::ClawserConfigManager::GetInstance()
+             .GetConfig()
+             .battery.enabled) {
+      return 0.0;
+    }
+  }
   return battery_status_.charging_time().InSecondsF();
 }
 
 double BatteryManager::dischargingTime() {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (!clawser::ClawserConfigManager::GetInstance()
+             .GetConfig()
+             .battery.enabled) {
+      return std::numeric_limits<double>::infinity();
+    }
+  }
   return battery_status_.discharging_time().InSecondsF();
 }
 
 double BatteryManager::level() {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (!clawser::ClawserConfigManager::GetInstance()
+             .GetConfig()
+             .battery.enabled) {
+      return 1.0;
+    }
+  }
   return battery_status_.Level();
 }
 

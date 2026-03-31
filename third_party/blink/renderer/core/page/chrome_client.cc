@@ -23,6 +23,8 @@
 
 #include <algorithm>
 
+#include "clawser/clawser_config.h"
+#include "clawser/screen_spoof.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_prescient_networking.h"
 #include "third_party/blink/renderer/core/core_initializer.h"

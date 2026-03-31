@@ -221,6 +221,7 @@ source_set("common") {
     "//base/allocator:buildflags",
     "//build:branding_buildflags",
     "//build/util:chromium_git_revision",
+    "//clawser",
     "//components/discardable_memory/common",
     "//components/input",
     "//components/services/filesystem/public/mojom",

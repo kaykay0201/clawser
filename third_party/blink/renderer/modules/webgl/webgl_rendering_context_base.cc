@@ -42,6 +42,8 @@
 #include "base/synchronization/lock.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
+#include "clawser/clawser_config.h"
+#include "clawser/webgl_spoof.h"
 #include "device/vr/buildflags/buildflags.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -3635,6 +3637,51 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
                                                     GLenum pname) {
   if (isContextLost())
     return ScriptValue::CreateNull(script_state->GetIsolate());
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    auto spoofed_int = clawser::SpoofWebGlIntParameter(pname);
+    if (spoofed_int.has_value()) {
+      return WebGLAny(script_state, spoofed_int->value);
+    }
+
+    auto spoofed_pair = clawser::SpoofWebGlIntPairParameter(pname);
+    if (spoofed_pair.has_value()) {
+      switch (pname) {
+        case GL_MAX_VIEWPORT_DIMS: {
+          DOMInt32Array* int32_array = DOMInt32Array::Create(2);
+          int32_array->Data()[0] = spoofed_pair->values[0];
+          int32_array->Data()[1] = spoofed_pair->values[1];
+          return WebGLAny(script_state, int32_array);
+        }
+        case GL_ALIASED_LINE_WIDTH_RANGE:
+        case GL_ALIASED_POINT_SIZE_RANGE: {
+          DOMFloat32Array* float32_array = DOMFloat32Array::Create(2);
+          float32_array->Data()[0] =
+              static_cast<float>(spoofed_pair->values[0]);
+          float32_array->Data()[1] =
+              static_cast<float>(spoofed_pair->values[1]);
+          return WebGLAny(script_state, float32_array);
+        }
+        default:
+          break;
+      }
+    }
+
+    if (pname == GL_RENDERER) {
+      std::string renderer = clawser::GetSpoofedGlRendererString();
+      if (!renderer.empty()) {
+        return WebGLAny(script_state, String::FromUTF8(renderer));
+      }
+    }
+
+    if (pname == GL_VENDOR) {
+      std::string vendor = clawser::GetSpoofedGlVendorString();
+      if (!vendor.empty()) {
+        return WebGLAny(script_state, String::FromUTF8(vendor));
+      }
+    }
+  }
+
   const int kIntZero = 0;
   switch (pname) {
     case GL_ACTIVE_TEXTURE:
@@ -3858,6 +3905,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
       return ScriptValue::CreateNull(script_state->GetIsolate());
     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
+        if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+          std::string spoofed_renderer = clawser::GetSpoofedGlRendererString();
+          if (!spoofed_renderer.empty()) {
+            return WebGLAny(script_state,
+                            String::FromUTF8(spoofed_renderer));
+          }
+        }
         if (IdentifiabilityStudySettings::Get()->ShouldSampleType(
                 blink::IdentifiableSurface::Type::kWebGLParameter)) {
           RecordIdentifiableGLParameterDigest(
@@ -3873,6 +3927,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
       return ScriptValue::CreateNull(script_state->GetIsolate());
     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
+        if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+          std::string spoofed_vendor = clawser::GetSpoofedGlVendorString();
+          if (!spoofed_vendor.empty()) {
+            return WebGLAny(script_state,
+                            String::FromUTF8(spoofed_vendor));
+          }
+        }
         if (IdentifiabilityStudySettings::Get()->ShouldSampleType(
                 blink::IdentifiableSurface::Type::kWebGLParameter)) {
           RecordIdentifiableGLParameterDigest(
@@ -4203,6 +4264,18 @@ std::optional<Vector<String>>
 WebGLRenderingContextBase::getSupportedExtensions() {
   if (isContextLost())
     return std::nullopt;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::vector<std::string> spoofed = clawser::GetSpoofedExtensions();
+    if (!spoofed.empty()) {
+      Vector<String> result;
+      result.reserve(static_cast<wtf_size_t>(spoofed.size()));
+      for (const auto& ext : spoofed) {
+        result.push_back(String::FromUTF8(ext));
+      }
+      return result;
+    }
+  }
 
   Vector<String> result;
 
@@ -5027,6 +5100,17 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
       return;
     }
     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
+
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      uint64_t seed = clawser::ClawserConfigManager::GetInstance()
+                          .GetConfig()
+                          .noise_seeds.webgl;
+      if (seed != 0) {
+        size_t byte_length =
+            static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+        clawser::ApplyWebGlReadPixelsNoise(data, byte_length, seed);
+      }
+    }
 
     if (IdentifiabilityStudySettings::Get()->ShouldSampleType(
             IdentifiableSurface::Type::kWebFeature)) {

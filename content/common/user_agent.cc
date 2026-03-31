@@ -9,6 +9,8 @@
 
 #include "content/public/common/user_agent.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/navigator_spoof.h"
 #include <stdint.h>
 
 #include "base/containers/contains.h"
@@ -337,12 +339,25 @@ std::string GetReducedUserAgent(bool mobile, std::string major_version) {
 
 std::string BuildUnifiedPlatformUserAgentFromProduct(
     const std::string& product) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string spoofed_ua = clawser::GetSpoofedUserAgent();
+    if (!spoofed_ua.empty()) {
+      return spoofed_ua;
+    }
+  }
   std::string os_info;
   base::StringAppendF(&os_info, "%s", GetUnifiedPlatform().c_str());
   return BuildUserAgentFromOSAndProduct(os_info, product);
 }
 
 std::string BuildUserAgentFromProduct(const std::string& product) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string spoofed_ua = clawser::GetSpoofedUserAgent();
+    if (!spoofed_ua.empty()) {
+      return spoofed_ua;
+    }
+  }
+
   std::string os_info;
   base::StringAppendF(&os_info, "%s%s", GetUserAgentPlatform().c_str(),
                       BuildOSCpuInfo(IncludeAndroidBuildNumber::Exclude,

@@ -29,6 +29,8 @@
 #include "third_party/blink/renderer/core/frame/screen.h"
 
 #include "base/numerics/safe_conversions.h"
+#include "clawser/clawser_config.h"
+#include "clawser/screen_spoof.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/renderer/core/event_target_names.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -100,46 +102,95 @@ bool Screen::AreWebExposedScreenPropertiesEqual(
 int Screen::height() const {
   if (!DomWindow())
     return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed = clawser::GetSpoofedScreenHeight();
+    if (spoofed > 0)
+      return spoofed;
+  }
+
   return GetRect(/*available=*/false).height();
 }
 
 int Screen::width() const {
   if (!DomWindow())
     return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed = clawser::GetSpoofedScreenWidth();
+    if (spoofed > 0)
+      return spoofed;
+  }
+
   return GetRect(/*available=*/false).width();
 }
 
 unsigned Screen::colorDepth() const {
   if (!DomWindow())
     return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed = clawser::GetSpoofedColorDepth();
+    if (spoofed > 0)
+      return static_cast<unsigned>(spoofed);
+  }
+
   return base::saturated_cast<unsigned>(GetScreenInfo().depth);
 }
 
 unsigned Screen::pixelDepth() const {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed = clawser::GetSpoofedPixelDepth();
+    if (spoofed > 0)
+      return static_cast<unsigned>(spoofed);
+  }
+
   return colorDepth();
 }
 
 int Screen::availLeft() const {
   if (!DomWindow())
     return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 0;
+
   return GetRect(/*available=*/true).x();
 }
 
 int Screen::availTop() const {
   if (!DomWindow())
     return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 0;
+
   return GetRect(/*available=*/true).y();
 }
 
 int Screen::availHeight() const {
   if (!DomWindow())
     return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed = clawser::GetSpoofedAvailHeight();
+    if (spoofed > 0)
+      return spoofed;
+  }
+
   return GetRect(/*available=*/true).height();
 }
 
 int Screen::availWidth() const {
   if (!DomWindow())
     return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed = clawser::GetSpoofedAvailWidth();
+    if (spoofed > 0)
+      return spoofed;
+  }
+
   return GetRect(/*available=*/true).width();
 }
 

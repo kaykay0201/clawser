@@ -31,6 +31,7 @@
 
 #include "base/containers/span.h"
 #include "base/hash/hash.h"
+#include "clawser/clawser_config.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/weak_cell.h"
@@ -178,7 +179,11 @@ class ShapeCache : public GarbageCollected<ShapeCache> {
       value = &add_result.stored_value->value;
     }
 
-    if ((!is_new_entry) || (size() < kMaxSize)) {
+    unsigned effective_max_size =
+        clawser::ClawserConfigManager::GetInstance().IsLoaded()
+            ? 2000u
+            : kMaxSize;
+    if ((!is_new_entry) || (size() < effective_max_size)) {
       return value;
     }
 

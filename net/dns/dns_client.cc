@@ -4,6 +4,9 @@
 
 #include "net/dns/dns_client.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/dns_spoof.h"
+
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -97,19 +100,35 @@ class DnsClientImpl : public DnsClient {
   ~DnsClientImpl() override = default;
 
   bool CanUseSecureDnsTransactions() const override {
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      if (clawser::ShouldForceDnsOverProxy()) {
+        return false;
+      }
+    }
+
     const DnsConfig* config = GetEffectiveConfig();
     return config && !config->doh_config.servers().empty();
   }
 
   bool CanUseInsecureDnsTransactions() const override {
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      if (clawser::ShouldPreventDirectDns()) {
+        return false;
+      }
+    }
+
     const DnsConfig* config = GetEffectiveConfig();
     return config && config->nameservers.size() > 0 && insecure_enabled_ &&
            !config->unhandled_options && !config->dns_over_tls_active;
   }
 
   bool CanQueryAdditionalTypesViaInsecureDns() const override {
-    // Only useful information if insecure DNS is usable, so expect this to
-    // never be called if that is not the case.
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      if (clawser::ShouldPreventDirectDns()) {
+        return false;
+      }
+    }
+
     DCHECK(CanUseInsecureDnsTransactions());
 
     return can_query_additional_types_via_insecure_;

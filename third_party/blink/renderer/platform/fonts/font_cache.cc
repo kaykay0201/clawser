@@ -33,6 +33,8 @@
 #include <memory>
 
 #include "base/debug/alias.h"
+#include "clawser/clawser_config.h"
+#include "clawser/font_spoof.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
 #include "base/strings/escape.h"
@@ -188,6 +190,20 @@ const SimpleFontData* FontCache::GetFontData(
     const FontDescription& font_description,
     const AtomicString& family,
     AlternateFontName altername_font_name) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded() &&
+      clawser::ShouldControlFonts() && !family.empty()) {
+    std::string family_utf8 = family.Utf8();
+    if (!clawser::IsFontAllowed(family_utf8)) {
+      if (const FontPlatformData* platform_data = GetFontPlatformData(
+              font_description,
+              FontFaceCreationParams(AtomicString("Arial")),
+              AlternateFontName::kNoAlternate)) {
+        return FontDataFromFontPlatformData(
+            platform_data, font_description.SubpixelAscentDescent());
+      }
+    }
+  }
+
   if (const FontPlatformData* platform_data = GetFontPlatformData(
           font_description,
           FontFaceCreationParams(

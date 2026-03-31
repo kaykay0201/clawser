@@ -28,5 +28,8 @@ blink_modules_sources("webusb") {
     "usb_out_transfer_result.h",
   ]
 
-  deps = [ "//build:chromeos_buildflags" ]
+  deps = [
+    "//build:chromeos_buildflags",
+    "//clawser",
+  ]
 }

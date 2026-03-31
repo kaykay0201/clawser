@@ -42,6 +42,8 @@
 #include "base/trace_event/trace_event.h"
 #include "cc/paint/paint_canvas.h"
 #include "cc/paint/paint_flags.h"
+#include "clawser/canvas_noise.h"
+#include "clawser/clawser_config.h"
 #include "cc/paint/paint_image.h"
 #include "cc/paint/record_paint_canvas.h"
 #include "cc/paint/refcounted_buffer.h"
@@ -2969,6 +2971,19 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
       SkIRect bounds =
           snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
       DCHECK(!bounds.intersect(SkIRect::MakeXYWH(sx, sy, sw, sh)));
+    }
+  }
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    uint64_t canvas_seed =
+        clawser::ClawserConfigManager::GetInstance().GetConfig().noise_seeds.canvas;
+    if (canvas_seed != 0 && image_data) {
+      SkPixmap pixmap = image_data->GetSkPixmap();
+      if (pixmap.writable_addr() && pixmap.computeByteSize() > 0) {
+        clawser::ApplyCanvasNoise(
+            static_cast<uint8_t*>(pixmap.writable_addr()),
+            pixmap.computeByteSize(), canvas_seed);
+      }
     }
   }
 

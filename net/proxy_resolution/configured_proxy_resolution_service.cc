@@ -4,6 +4,9 @@
 
 #include "net/proxy_resolution/configured_proxy_resolution_service.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/dns_spoof.h"
+
 #include <algorithm>
 #include <cmath>
 #include <memory>

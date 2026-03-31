@@ -13,5 +13,8 @@ blink_modules_sources("battery") {
     "battery_status.h",
   ]
 
-  deps = [ "//services/service_manager/public/cpp" ]
+  deps = [
+    "//clawser",
+    "//services/service_manager/public/cpp",
+  ]
 }

@@ -35,6 +35,8 @@
 
 #include <memory>
 
+#include "clawser/audio_noise.h"
+#include "clawser/clawser_config.h"
 #include "base/containers/span.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
@@ -222,6 +224,19 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
     return NotShared<DOMFloat32Array>(nullptr);
   }
 
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    uint64_t audio_seed =
+        clawser::ClawserConfigManager::GetInstance()
+            .GetConfig()
+            .noise_seeds.audio;
+    if (audio_seed != 0) {
+      DOMFloat32Array* channel_array = channels_[channel_index].Get();
+      clawser::ApplyAudioNoise(
+          static_cast<float*>(channel_array->Data()),
+          channel_array->length(), audio_seed ^ (channel_index + 1));
+    }
+  }
+
   return NotShared<DOMFloat32Array>(channels_[channel_index].Get());
 }
 
@@ -264,6 +279,18 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
   DCHECK(dst.data());
 
   dst.first(count).copy_from(src.subspan(buffer_offset, count));
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    uint64_t audio_seed =
+        clawser::ClawserConfigManager::GetInstance()
+            .GetConfig()
+            .noise_seeds.audio;
+    if (audio_seed != 0) {
+      clawser::ApplyAudioNoise(
+          dst.data(), count,
+          audio_seed ^ (channel_number + 1));
+    }
+  }
 }
 
 void AudioBuffer::copyToChannel(NotShared<DOMFloat32Array> source,

@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/navigator_spoof.h"
 #include "base/feature_list.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/common/features.h"
@@ -46,6 +48,13 @@ NavigatorBase::NavigatorBase(ExecutionContext* context)
     : NavigatorLanguage(context), ExecutionContextClient(context) {}
 
 String NavigatorBase::userAgent() const {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string spoofed_ua = clawser::GetSpoofedUserAgent();
+    if (!spoofed_ua.empty()) {
+      return String::FromUTF8(spoofed_ua);
+    }
+  }
+
   ExecutionContext* execution_context = GetExecutionContext();
   return execution_context ? execution_context->UserAgent() : String();
 }
@@ -80,6 +89,13 @@ void NavigatorBase::Trace(Visitor* visitor) const {
 }
 
 unsigned int NavigatorBase::hardwareConcurrency() const {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed_hc = clawser::GetSpoofedHardwareConcurrency();
+    if (spoofed_hc > 0) {
+      return static_cast<unsigned int>(spoofed_hc);
+    }
+  }
+
   unsigned int hardware_concurrency =
       NavigatorConcurrentHardware::hardwareConcurrency();
 

@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/timing/performance.h"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 
 #include "base/check_op.h"
@@ -41,6 +42,7 @@
 #include "base/time/default_clock.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
+#include "clawser/clawser_config.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/mojom/permissions_policy/document_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -1167,7 +1169,12 @@ DOMHighResTimeStamp Performance::MonotonicTimeToDOMHighResTimeStamp(
 }
 
 DOMHighResTimeStamp Performance::now() const {
-  return MonotonicTimeToDOMHighResTimeStamp(tick_clock_->NowTicks());
+  DOMHighResTimeStamp ts =
+      MonotonicTimeToDOMHighResTimeStamp(tick_clock_->NowTicks());
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    ts = std::round(ts * 10.0) / 10.0;
+  }
+  return ts;
 }
 
 // static

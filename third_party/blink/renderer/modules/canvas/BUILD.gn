@@ -58,6 +58,7 @@ blink_modules_sources("canvas") {
   ]
 
   deps = [
+    "//clawser",
     "//third_party/blink/renderer/modules/webcodecs",
     "//third_party/blink/renderer/modules/webgpu",
   ]

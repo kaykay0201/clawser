@@ -31,6 +31,8 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "clawser/clawser_config.h"
+#include "clawser/screen_spoof.h"
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/task/single_thread_task_runner.h"
@@ -1547,6 +1549,12 @@ int LocalDOMWindow::outerHeight() const {
   if (!GetFrame())
     return 0;
 
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed = clawser::GetSpoofedScreenHeight();
+    if (spoofed > 0)
+      return spoofed;
+  }
+
   LocalFrame* frame = GetFrame();
 
   // FencedFrames should return innerHeight to prevent passing
@@ -1571,6 +1579,12 @@ int LocalDOMWindow::outerHeight() const {
 int LocalDOMWindow::outerWidth() const {
   if (!GetFrame())
     return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    int spoofed = clawser::GetSpoofedScreenWidth();
+    if (spoofed > 0)
+      return spoofed;
+  }
 
   LocalFrame* frame = GetFrame();
 
@@ -1643,6 +1657,9 @@ int LocalDOMWindow::screenX() const {
   if (!frame)
     return 0;
 
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 0;
+
   Page* page = frame->GetPage();
   if (!page)
     return 0;
@@ -1659,6 +1676,9 @@ int LocalDOMWindow::screenX() const {
 int LocalDOMWindow::screenY() const {
   LocalFrame* frame = GetFrame();
   if (!frame)
+    return 0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
     return 0;
 
   Page* page = frame->GetPage();
@@ -1772,6 +1792,12 @@ CSSStyleDeclaration* LocalDOMWindow::getComputedStyle(
 double LocalDOMWindow::devicePixelRatio() const {
   if (!GetFrame())
     return 0.0;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    double spoofed_dpr = clawser::GetSpoofedDevicePixelRatio();
+    if (spoofed_dpr > 0.0)
+      return spoofed_dpr;
+  }
 
   return GetFrame()->DevicePixelRatio();
 }

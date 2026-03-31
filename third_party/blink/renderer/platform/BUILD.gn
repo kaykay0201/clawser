@@ -1755,6 +1755,7 @@ component("platform") {
     "//cc",
     "//cc/ipc",
     "//cc/mojo_embedder",
+    "//clawser",
     "//components/language_detection/content/common",
     "//components/language_detection/content/common:common_blink",
     "//components/language_detection/content/renderer",

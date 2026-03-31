@@ -41,6 +41,9 @@
 #include <string>
 #include <utility>
 
+#include "clawser/clawser_config.h"
+#include "clawser/webrtc_spoof.h"
+
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/lazy_instance.h"
@@ -566,6 +569,14 @@ RTCPeerConnection* RTCPeerConnection::Create(
     return nullptr;
   }
 
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded() &&
+      clawser::ShouldBlockAllWebRtc()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        "WebRTC has been disabled by browser policy.");
+    return nullptr;
+  }
+
   // Count number of PeerConnections that could potentially be impacted by CSP
   auto* content_security_policy = context->GetContentSecurityPolicy();
   if (content_security_policy &&
@@ -740,6 +751,14 @@ ScriptPromise<RTCSessionDescriptionInit> RTCPeerConnection::createOffer(
     ScriptState* script_state,
     const RTCOfferOptions* options,
     ExceptionState& exception_state) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded() &&
+      clawser::ShouldBlockAllWebRtc()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        "WebRTC has been disabled by browser policy.");
+    return EmptyPromise();
+  }
+
   if (signaling_state_ ==
       webrtc::PeerConnectionInterface::SignalingState::kClosed) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
@@ -804,6 +823,14 @@ ScriptPromise<RTCSessionDescriptionInit> RTCPeerConnection::createAnswer(
     ScriptState* script_state,
     const RTCAnswerOptions* options,
     ExceptionState& exception_state) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded() &&
+      clawser::ShouldBlockAllWebRtc()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        "WebRTC has been disabled by browser policy.");
+    return EmptyPromise();
+  }
+
   if (signaling_state_ ==
       webrtc::PeerConnectionInterface::SignalingState::kClosed) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
@@ -2341,6 +2368,36 @@ void RTCPeerConnection::DidGenerateICECandidate(
   DCHECK(!closed_);
   DCHECK(GetExecutionContext()->IsContextThread());
   DCHECK(platform_candidate);
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    clawser::WebRtcPolicy policy = clawser::GetWebRtcPolicy();
+
+    if (policy == clawser::WebRtcPolicy::kDisabled) {
+      return;
+    }
+
+    String candidate_str = platform_candidate->Candidate();
+    std::string candidate_utf8 = candidate_str.Utf8();
+
+    if (policy == clawser::WebRtcPolicy::kProxyOnly) {
+      if (candidate_utf8.find("typ host") != std::string::npos ||
+          candidate_utf8.find("typ srflx") != std::string::npos) {
+        return;
+      }
+    }
+
+    if (policy == clawser::WebRtcPolicy::kSpoofed) {
+      std::string rewritten = clawser::RewriteCandidateIp(candidate_utf8);
+      if (rewritten != candidate_utf8) {
+        platform_candidate = MakeGarbageCollected<RTCIceCandidatePlatform>(
+            String::FromUTF8(rewritten), platform_candidate->SdpMid(),
+            platform_candidate->SdpMLineIndex(),
+            platform_candidate->UsernameFragment(),
+            platform_candidate->Url());
+      }
+    }
+  }
+
   RTCIceCandidate* ice_candidate = RTCIceCandidate::Create(platform_candidate);
   MaybeDispatchEvent(RTCPeerConnectionIceEvent::Create(ice_candidate));
 }

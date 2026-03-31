@@ -6,6 +6,8 @@
 
 #include <utility>
 
+#include "clawser/clawser_config.h"
+
 #include "base/notreached.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "services/device/public/mojom/usb_device.mojom-blink.h"
@@ -198,6 +200,18 @@ ScriptPromise<IDLSequence<USBDevice>> USB::getDevices(
     return ScriptPromise<IDLSequence<USBDevice>>();
   }
 
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (!clawser::ClawserConfigManager::GetInstance()
+             .GetConfig()
+             .usb_enabled) {
+      auto* resolver = MakeGarbageCollected<
+          ScriptPromiseResolver<IDLSequence<USBDevice>>>(
+          script_state, exception_state.GetContext());
+      resolver->Resolve(HeapVector<Member<USBDevice>>());
+      return resolver->Promise();
+    }
+  }
+
   EnsureServiceConnection();
   auto* resolver =
       MakeGarbageCollected<ScriptPromiseResolver<IDLSequence<USBDevice>>>(
@@ -223,6 +237,20 @@ ScriptPromise<USBDevice> USB::requestDevice(
   if (ShouldBlockUsbServiceCall(GetSupplementable()->DomWindow(),
                                 GetExecutionContext(), &exception_state)) {
     return EmptyPromise();
+  }
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (!clawser::ClawserConfigManager::GetInstance()
+             .GetConfig()
+             .usb_enabled) {
+      exception_state.ThrowSecurityError(
+          "WebUSB API is disabled by browser policy.");
+      return ScriptPromise<USBDevice>::RejectWithDOMException(
+          script_state,
+          MakeGarbageCollected<DOMException>(
+              DOMExceptionCode::kNotFoundError,
+              "No device selected."));
+    }
   }
 
   EnsureServiceConnection();

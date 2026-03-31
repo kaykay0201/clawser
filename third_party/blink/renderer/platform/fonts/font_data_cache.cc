@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_data_cache.h"
 
 #include "build/build_config.h"
+#include "clawser/clawser_config.h"
 #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
 
 namespace blink {
@@ -40,7 +41,11 @@ namespace {
 // The maximum number of strong references to retain via the LRU.
 // This explicitly leaks fonts (and related objects) unless under extreme
 // memory pressure where it will be cleared. DO NOT increase unnecessarily.
-const wtf_size_t kMaxSize = 64;
+wtf_size_t GetMaxCacheSize() {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 16;
+  return 64;
+}
 
 }  // namespace
 
@@ -68,7 +73,7 @@ const SimpleFontData* FontDataCache::Get(const FontPlatformData* platform_data,
 
   // Update our LRU to keep a strong reference to `result`.
   strong_reference_lru_.PrependOrMoveToFirst(result);
-  while (strong_reference_lru_.size() > kMaxSize) {
+  while (strong_reference_lru_.size() > GetMaxCacheSize()) {
     strong_reference_lru_.pop_back();
   }
 

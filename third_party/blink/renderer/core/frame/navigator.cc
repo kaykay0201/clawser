@@ -23,6 +23,8 @@
 
 #include "third_party/blink/renderer/core/frame/navigator.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/navigator_spoof.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -36,6 +38,7 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/instrumentation/memory_pressure_listener.h"
 #include "third_party/blink/renderer/platform/language.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -46,10 +49,13 @@ String Navigator::productSub() const {
 }
 
 String Navigator::vendor() const {
-  // Do not change without good cause. History:
-  // https://code.google.com/p/chromium/issues/detail?id=276813
-  // https://www.w3.org/Bugs/Public/show_bug.cgi?id=27786
-  // https://groups.google.com/a/chromium.org/forum/#!topic/blink-dev/QrgyulnqvmE
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string spoofed_vendor = clawser::GetSpoofedVendor();
+    if (!spoofed_vendor.empty()) {
+      return String::FromUTF8(spoofed_vendor);
+    }
+  }
+
   return "Google Inc.";
 }
 
@@ -58,9 +64,13 @@ String Navigator::vendorSub() const {
 }
 
 String Navigator::platform() const {
-  // TODO(955620): Consider changing devtools overrides to only allow overriding
-  // the platform with a frozen platform to distinguish between
-  // mobile and desktop when ReduceUserAgent is enabled.
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string spoofed_platform = clawser::GetSpoofedPlatform();
+    if (!spoofed_platform.empty()) {
+      return String::FromUTF8(spoofed_platform);
+    }
+  }
+
   if (!DomWindow())
     return NavigatorBase::platform();
   const String& platform_override =
@@ -82,6 +92,9 @@ bool Navigator::cookieEnabled() const {
 }
 
 bool Navigator::webdriver() const {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return false;
+
   if (RuntimeEnabledFeatures::AutomationControlledEnabled())
     return true;
 
@@ -91,6 +104,19 @@ bool Navigator::webdriver() const {
 }
 
 String Navigator::GetAcceptLanguages() {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::vector<std::string> spoofed_langs = clawser::GetSpoofedLanguages();
+    if (!spoofed_langs.empty()) {
+      StringBuilder sb;
+      for (size_t i = 0; i < spoofed_langs.size(); ++i) {
+        if (i > 0)
+          sb.Append(',');
+        sb.Append(String::FromUTF8(spoofed_langs[i]));
+      }
+      return sb.ToString();
+    }
+  }
+
   if (!DomWindow())
     return DefaultLanguage();
 

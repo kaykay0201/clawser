@@ -30,6 +30,8 @@
 
 #include "third_party/blink/renderer/modules/donottrack/navigator_do_not_track.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/navigator_spoof.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -39,6 +41,15 @@ namespace blink {
 namespace NavigatorDoNotTrack {
 
 String doNotTrack(Navigator& navigator) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string spoofed_dnt = clawser::GetSpoofedDoNotTrack();
+    if (spoofed_dnt == "1") {
+      return "1";
+    } else if (spoofed_dnt == "0" || spoofed_dnt == "unspecified") {
+      return String();
+    }
+  }
+
   LocalDOMWindow* window = navigator.DomWindow();
   return window ? window->GetFrame()->Client()->DoNotTrackValue() : String();
 }

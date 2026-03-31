@@ -58,6 +58,7 @@ extern const char kAutoSelectWindowCaptureSourceByTitle[];
 extern const char kBypassAccountAlreadyUsedByAnotherProfileCheck[];
 extern const char kCheckForUpdateIntervalSec[];
 extern const char kCipherSuiteBlacklist[];
+extern const char kClawserConfig[];
 extern const char kCrashOnHangThreads[];
 extern const char kCreateBrowserOnStartupForTests[];
 extern const char kCredits[];

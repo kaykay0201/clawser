@@ -26,6 +26,9 @@
 
 #include "third_party/blink/renderer/core/dom/element.h"
 
+#include "clawser/client_rects_noise.h"
+#include "clawser/clawser_config.h"
+
 #include <algorithm>
 #include <bitset>
 #include <limits>
@@ -2749,6 +2752,38 @@ DOMRectList* Element::getClientRects() {
   DCHECK(element_layout_object);
   GetDocument().AdjustQuadsForScrollAndAbsoluteZoom(quads,
                                                     *element_layout_object);
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    uint64_t seed = clawser::ClawserConfigManager::GetInstance()
+                        .GetConfig()
+                        .noise_seeds.client_rects;
+    if (seed != 0) {
+      std::string tag_utf8;
+      if (const AtomicString& local = localName())
+        tag_utf8 = local.Utf8();
+      std::string class_utf8;
+      if (hasAttribute(html_names::kClassAttr))
+        class_utf8 = getAttribute(html_names::kClassAttr).Utf8();
+      std::string id_utf8;
+      if (hasAttribute(html_names::kIdAttr))
+        id_utf8 = getAttribute(html_names::kIdAttr).Utf8();
+
+      uint64_t element_hash =
+          clawser::HashElementIdentity(tag_utf8, class_utf8, id_utf8);
+
+      for (wtf_size_t i = 0; i < quads.size(); ++i) {
+        gfx::RectF bounds = quads[i].BoundingBox();
+        double x = static_cast<double>(bounds.x());
+        double y = static_cast<double>(bounds.y());
+        double w = static_cast<double>(bounds.width());
+        double h = static_cast<double>(bounds.height());
+        uint64_t rect_hash = element_hash ^ (static_cast<uint64_t>(i) + 1);
+        clawser::ApplyRectNoise(x, y, w, h, seed, rect_hash);
+        quads[i] = gfx::QuadF(gfx::RectF(x, y, w, h));
+      }
+    }
+  }
+
   return MakeGarbageCollected<DOMRectList>(quads);
 }
 
@@ -2782,7 +2817,33 @@ gfx::RectF Element::GetBoundingClientRectNoLifecycleUpdate() const {
 DOMRect* Element::GetBoundingClientRect() {
   GetDocument().EnsurePaintLocationDataValidForNode(
       this, DocumentUpdateReason::kJavaScript);
-  return DOMRect::FromRectF(GetBoundingClientRectNoLifecycleUpdate());
+  DOMRect* result = DOMRect::FromRectF(GetBoundingClientRectNoLifecycleUpdate());
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    uint64_t seed = clawser::ClawserConfigManager::GetInstance()
+                        .GetConfig()
+                        .noise_seeds.client_rects;
+    if (seed != 0) {
+      std::string tag_utf8;
+      if (const AtomicString& local = localName())
+        tag_utf8 = local.Utf8();
+      std::string class_utf8;
+      if (hasAttribute(html_names::kClassAttr))
+        class_utf8 = getAttribute(html_names::kClassAttr).Utf8();
+      std::string id_utf8;
+      if (hasAttribute(html_names::kIdAttr))
+        id_utf8 = getAttribute(html_names::kIdAttr).Utf8();
+
+      uint64_t element_hash =
+          clawser::HashElementIdentity(tag_utf8, class_utf8, id_utf8);
+      double x = result->x(), y = result->y();
+      double w = result->width(), h = result->height();
+      clawser::ApplyRectNoise(x, y, w, h, seed, element_hash);
+      result = DOMRect::Create(x, y, w, h);
+    }
+  }
+
+  return result;
 }
 
 DOMRect* Element::GetBoundingClientRectForBinding() {

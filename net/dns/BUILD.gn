@@ -292,6 +292,7 @@ source_set("host_resolver_manager") {
 
   deps = [
     ":host_resolver",
+    "//clawser",
     "//net:net_deps",
     "//net/dns/public",
   ]
@@ -347,6 +348,7 @@ source_set("dns_client") {
 
   deps = [
     ":host_resolver",
+    "//clawser",
     "//net:net_deps",
   ]
   public_deps = [

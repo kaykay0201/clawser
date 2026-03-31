@@ -8,18 +8,25 @@
 
 #include "base/feature_list.h"
 #include "cc/base/features.h"
+#include "clawser/clawser_config.h"
 #include "components/viz/common/resources/platform_color.h"
 #include "third_party/khronos/GLES2/gl2.h"
 
 namespace cc {
 
 LayerTreeSettings::LayerTreeSettings()
-    : default_tile_size(gfx::Size(256, 256)),
+    : default_tile_size(
+          clawser::ClawserConfigManager::GetInstance().IsLoaded()
+              ? gfx::Size(128, 128)
+              : gfx::Size(256, 256)),
       max_untiled_layer_size(gfx::Size(512, 512)),
       minimum_occlusion_tracking_size(gfx::Size(160, 160)),
-      memory_policy(64 * 1024 * 1024,
-                    gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
-                    ManagedMemoryPolicy::kDefaultNumResourcesLimit) {}
+      memory_policy(
+          clawser::ClawserConfigManager::GetInstance().IsLoaded()
+              ? 16 * 1024 * 1024
+              : 64 * 1024 * 1024,
+          gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
+          ManagedMemoryPolicy::kDefaultNumResourcesLimit) {}
 
 LayerTreeSettings::LayerTreeSettings(const LayerTreeSettings& other) = default;
 LayerTreeSettings::~LayerTreeSettings() = default;

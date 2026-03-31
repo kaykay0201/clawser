@@ -59,6 +59,7 @@
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/common/permissions_policy/origin_with_possible_wildcards.h"
 #include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
+#include "clawser/clawser_config.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
@@ -708,6 +709,29 @@ void UpdateNavigationRequestClientUaHeadersImpl(
   if (!disable_due_to_custom_ua) {
     if (!ua_metadata.has_value())
       ua_metadata = delegate->GetUserAgentMetadata();
+
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      const auto& config =
+          clawser::ClawserConfigManager::GetInstance().GetConfig();
+      const auto& nav = config.navigator;
+      if (!nav.user_agent_data.brands.empty()) {
+        blink::UserAgentMetadata spoofed;
+        for (const auto& brand : nav.user_agent_data.brands) {
+          spoofed.brand_version_list.push_back({brand.brand, brand.version});
+          spoofed.brand_full_version_list.push_back(
+              {brand.brand, brand.version + ".0.0.0"});
+        }
+        spoofed.platform = nav.user_agent_data.platform;
+        spoofed.platform_version = nav.user_agent_data.platform_version;
+        spoofed.architecture = nav.user_agent_data.architecture;
+        spoofed.model = nav.user_agent_data.model;
+        spoofed.mobile = nav.user_agent_data.mobile;
+        spoofed.bitness = nav.user_agent_data.bitness;
+        spoofed.full_version =
+            nav.user_agent_data.brands[0].version + ".0.0.0";
+        ua_metadata = spoofed;
+      }
+    }
 
     // The `Sec-CH-UA` client hint is attached to all outgoing requests. This is
     // (intentionally) different than other client hints.

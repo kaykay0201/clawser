@@ -79,6 +79,7 @@ source_set("browser") {
   ldflags = []
 
   deps = [
+    "//clawser",
     "//base",
     "//base:base_static",
     "//base:clang_profiling_buildflags",

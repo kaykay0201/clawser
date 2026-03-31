@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/frame/navigator_ua_data.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/navigator_spoof.h"
 #include "base/compiler_specific.h"
 #include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/common/features.h"
@@ -142,6 +144,11 @@ void NavigatorUAData::SetFormFactors(Vector<String> form_factors) {
 
 bool NavigatorUAData::mobile() const {
   if (GetExecutionContext()) {
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      return clawser::ClawserConfigManager::GetInstance()
+          .GetConfig()
+          .navigator.user_agent_data.mobile;
+    }
     return is_mobile_;
   }
   return false;
@@ -155,7 +162,23 @@ const HeapVector<Member<NavigatorUABrandVersion>>& NavigatorUAData::brands()
 
   ExecutionContext* context = GetExecutionContext();
   if (context) {
-    // Record IdentifiabilityStudy metrics if the client is in the study.
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      std::vector<clawser::SpoofedBrandVersion> spoofed_brands =
+          clawser::GetSpoofedBrands();
+      if (!spoofed_brands.empty()) {
+        auto& mutable_this = const_cast<NavigatorUAData&>(*this);
+        mutable_this.brand_set_.clear();
+        for (const auto& sbv : spoofed_brands) {
+          NavigatorUABrandVersion* brand_version =
+              NavigatorUABrandVersion::Create();
+          brand_version->setBrand(String::FromUTF8(sbv.brand));
+          brand_version->setVersion(String::FromUTF8(sbv.version));
+          mutable_this.brand_set_.push_back(brand_version);
+        }
+        return brand_set_;
+      }
+    }
+
     if (IdentifiabilityStudySettings::Get()->ShouldSampleSurface(
             identifiable_surface)) [[unlikely]] {
       IdentifiableTokenBuilder token_builder;
@@ -180,6 +203,16 @@ const HeapVector<Member<NavigatorUABrandVersion>>& NavigatorUAData::brands()
 
 const String& NavigatorUAData::platform() const {
   if (GetExecutionContext()) {
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      const std::string& spoofed_platform =
+          clawser::ClawserConfigManager::GetInstance()
+              .GetConfig()
+              .navigator.user_agent_data.platform;
+      if (!spoofed_platform.empty()) {
+        auto& mutable_this = const_cast<NavigatorUAData&>(*this);
+        mutable_this.platform_ = String::FromUTF8(spoofed_platform);
+      }
+    }
     return platform_;
   }
   return WTF::g_empty_string;
@@ -217,6 +250,43 @@ ScriptPromise<UADataValues> NavigatorUAData::getHighEntropyValues(
   auto* execution_context =
       ExecutionContext::From(script_state);  // GetExecutionContext();
   DCHECK(execution_context);
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    const auto& nav_config =
+        clawser::ClawserConfigManager::GetInstance().GetConfig().navigator;
+    const auto& ua_data = nav_config.user_agent_data;
+
+    UADataValues* spoofed_values = MakeGarbageCollected<UADataValues>();
+    spoofed_values->setBrands(brands());
+    spoofed_values->setMobile(ua_data.mobile);
+    spoofed_values->setPlatform(String::FromUTF8(ua_data.platform));
+
+    for (const String& hint : hints) {
+      if (hint == "platformVersion") {
+        spoofed_values->setPlatformVersion(
+            String::FromUTF8(ua_data.platform_version));
+      } else if (hint == "architecture") {
+        spoofed_values->setArchitecture(
+            String::FromUTF8(ua_data.architecture));
+      } else if (hint == "model") {
+        spoofed_values->setModel(String::FromUTF8(ua_data.model));
+      } else if (hint == "bitness") {
+        spoofed_values->setBitness(String::FromUTF8(ua_data.bitness));
+      } else if (hint == "fullVersionList") {
+        HeapVector<Member<NavigatorUABrandVersion>> brand_list;
+        for (const auto& bv : ua_data.brands) {
+          NavigatorUABrandVersion* entry = NavigatorUABrandVersion::Create();
+          entry->setBrand(String::FromUTF8(bv.brand));
+          entry->setVersion(String::FromUTF8(bv.version));
+          brand_list.push_back(entry);
+        }
+        spoofed_values->setFullVersionList(brand_list);
+      }
+    }
+
+    resolver->Resolve(spoofed_values);
+    return promise;
+  }
 
   bool record_identifiability =
       IdentifiabilityStudySettings::Get()->ShouldSampleType(

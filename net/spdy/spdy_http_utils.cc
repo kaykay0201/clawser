@@ -27,6 +27,8 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_util.h"
+#include "base/rand_util.h"
+#include "clawser/clawser_config.h"
 #include "net/quic/quic_http_utils.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_stream_priority.h"
 
@@ -202,10 +204,32 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
                                       std::optional<RequestPriority> priority,
                                       const HttpRequestHeaders& request_headers,
                                       quiche::HttpHeaderBlock* headers) {
-  headers->insert({spdy::kHttp2MethodHeader, info.method});
   if (info.method == "CONNECT") {
+    headers->insert({spdy::kHttp2MethodHeader, info.method});
     headers->insert({spdy::kHttp2AuthorityHeader, GetHostAndPort(info.url)});
+  } else if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string authority = GetHostAndOptionalPort(info.url);
+    std::string scheme = info.url.scheme();
+    std::string path = info.url.PathForRequest();
+    int order = base::RandGenerator(3);
+    if (order == 0) {
+      headers->insert({spdy::kHttp2MethodHeader, info.method});
+      headers->insert({spdy::kHttp2AuthorityHeader, authority});
+      headers->insert({spdy::kHttp2SchemeHeader, scheme});
+      headers->insert({spdy::kHttp2PathHeader, path});
+    } else if (order == 1) {
+      headers->insert({spdy::kHttp2MethodHeader, info.method});
+      headers->insert({spdy::kHttp2PathHeader, path});
+      headers->insert({spdy::kHttp2AuthorityHeader, authority});
+      headers->insert({spdy::kHttp2SchemeHeader, scheme});
+    } else {
+      headers->insert({spdy::kHttp2MethodHeader, info.method});
+      headers->insert({spdy::kHttp2SchemeHeader, scheme});
+      headers->insert({spdy::kHttp2AuthorityHeader, authority});
+      headers->insert({spdy::kHttp2PathHeader, path});
+    }
   } else {
+    headers->insert({spdy::kHttp2MethodHeader, info.method});
     headers->insert(
         {spdy::kHttp2AuthorityHeader, GetHostAndOptionalPort(info.url)});
     headers->insert({spdy::kHttp2SchemeHeader, info.url.scheme()});

@@ -108,6 +108,11 @@
 #include "third_party/blink/renderer/platform/graphics/memory_managed_paint_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+#include "clawser/canvas_noise.h"
+#include "clawser/clawser_config.h"
+#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
+#include "third_party/skia/include/core/SkData.h"
+#include "third_party/skia/include/core/SkImage.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_to_video_frame_copier.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_transform.h"
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_video_frame_pool.h"
@@ -1254,6 +1259,38 @@ String HTMLCanvasElement::ToDataURLInternal(
     if (!data_buffer)
       return String("data:,");
 
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      uint64_t canvas_seed =
+          clawser::ClawserConfigManager::GetInstance().GetConfig().noise_seeds.canvas;
+      if (canvas_seed != 0) {
+        PaintImage paint_img = image_bitmap->PaintImageForCurrentFrame();
+        if (paint_img) {
+          SkImageInfo info = paint_img.GetSkImageInfo().makeAlphaType(
+              kUnpremul_SkAlphaType);
+          size_t row_bytes = info.minRowBytes();
+          size_t byte_size = info.computeByteSize(row_bytes);
+          if (!SkImageInfo::ByteSizeOverflowed(byte_size)) {
+            sk_sp<SkData> pixel_data = SkData::MakeUninitialized(byte_size);
+            if (paint_img.readPixels(info, pixel_data->writable_data(),
+                                     row_bytes, 0, 0)) {
+              clawser::ApplyCanvasNoise(
+                  static_cast<uint8_t*>(pixel_data->writable_data()),
+                  byte_size, canvas_seed);
+              sk_sp<SkImage> noised_image =
+                  SkImages::RasterFromData(info, pixel_data, row_bytes);
+              if (noised_image) {
+                image_bitmap =
+                    UnacceleratedStaticBitmapImage::Create(noised_image);
+                data_buffer = ImageDataBuffer::Create(image_bitmap);
+                if (!data_buffer)
+                  return String("data:,");
+              }
+            }
+          }
+        }
+      }
+    }
+
     String data_url = data_buffer->ToDataURL(encoding_mime_type, quality);
     base::TimeDelta elapsed_time = base::TimeTicks::Now() - start_time;
     float sqrt_pixels =
@@ -1366,6 +1403,34 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
   scoped_refptr<StaticBitmapImage> image_bitmap =
       Snapshot(FlushReason::kToBlob, kBackBuffer);
   if (image_bitmap) {
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      uint64_t canvas_seed =
+          clawser::ClawserConfigManager::GetInstance().GetConfig().noise_seeds.canvas;
+      if (canvas_seed != 0) {
+        PaintImage paint_img = image_bitmap->PaintImageForCurrentFrame();
+        if (paint_img) {
+          SkImageInfo info = paint_img.GetSkImageInfo().makeAlphaType(
+              kUnpremul_SkAlphaType);
+          size_t row_bytes = info.minRowBytes();
+          size_t byte_size = info.computeByteSize(row_bytes);
+          if (!SkImageInfo::ByteSizeOverflowed(byte_size)) {
+            sk_sp<SkData> pixel_data = SkData::MakeUninitialized(byte_size);
+            if (paint_img.readPixels(info, pixel_data->writable_data(),
+                                     row_bytes, 0, 0)) {
+              clawser::ApplyCanvasNoise(
+                  static_cast<uint8_t*>(pixel_data->writable_data()),
+                  byte_size, canvas_seed);
+              sk_sp<SkImage> noised_image =
+                  SkImages::RasterFromData(info, pixel_data, row_bytes);
+              if (noised_image) {
+                image_bitmap =
+                    UnacceleratedStaticBitmapImage::Create(noised_image);
+              }
+            }
+          }
+        }
+      }
+    }
     auto* options = ImageEncodeOptions::Create();
     options->setType(ImageEncodingMimeTypeName(encoding_mime_type));
     async_creator = MakeGarbageCollected<CanvasAsyncBlobCreator>(

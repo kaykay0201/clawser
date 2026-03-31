@@ -121,6 +121,8 @@ const char kCheckForUpdateIntervalSec[] = "check-for-update-interval";
 // Comma-separated list of SSL cipher suites to disable.
 const char kCipherSuiteBlacklist[] = "cipher-suite-blacklist";
 
+const char kClawserConfig[] = "clawser-config";
+
 // Comma-separated list of BrowserThreads that cause browser process to crash if
 // the given browser thread is not responsive. UI/IO are the BrowserThreads that
 // are supported.

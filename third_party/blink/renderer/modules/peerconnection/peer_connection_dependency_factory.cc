@@ -6,10 +6,14 @@
 
 #include <stddef.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "clawser/clawser_config.h"
+#include "clawser/webrtc_spoof.h"
 
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -867,6 +871,51 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
   CHECK(observer);
   if (!GetPcFactory().get())
     return nullptr;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    clawser::WebRtcPolicy policy = clawser::GetWebRtcPolicy();
+
+    if (policy == clawser::WebRtcPolicy::kDisabled) {
+      return nullptr;
+    }
+
+    if (policy == clawser::WebRtcPolicy::kProxyOnly) {
+      webrtc::PeerConnectionInterface::RTCConfiguration modified_config =
+          config;
+      modified_config.type = webrtc::PeerConnectionInterface::kRelay;
+      modified_config.servers.erase(
+          std::remove_if(
+              modified_config.servers.begin(),
+              modified_config.servers.end(),
+              [](const webrtc::PeerConnectionInterface::IceServer& s) {
+                for (const auto& url : s.urls) {
+                  if (url.find("stun:") == 0)
+                    return true;
+                }
+                return false;
+              }),
+          modified_config.servers.end());
+
+      webrtc::PeerConnectionDependencies deps(observer);
+      if (web_frame) {
+        deps.allocator = CreatePortAllocator(web_frame);
+      }
+      deps.async_dns_resolver_factory = CreateAsyncDnsResolverFactory();
+      if (rtp_transport) {
+        deps.network_controller_factory =
+            std::make_unique<InterceptingNetworkControllerFactory>(
+                context_task_runner_, rtp_transport);
+      }
+      auto pc_or_error = GetPcFactory()->CreatePeerConnectionOrError(
+          modified_config, std::move(deps));
+      if (pc_or_error.ok()) {
+        return pc_or_error.value();
+      } else {
+        ThrowExceptionFromRTCError(pc_or_error.error(), exception_state);
+        return nullptr;
+      }
+    }
+  }
 
   webrtc::PeerConnectionDependencies dependencies(observer);
   // |web_frame| may be null in tests, e.g. if

@@ -9,6 +9,7 @@
 
 #include "base/check.h"
 #include "cc/paint/paint_flags.h"
+#include "clawser/clawser_config.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "third_party/skia/include/core/SkPixmap.h"
@@ -35,6 +36,9 @@ bool ImageDecodeCacheUtils::ShouldEvictCaches(
 // static
 size_t ImageDecodeCacheUtils::GetWorkingSetBytesForImageDecode(
     bool for_renderer) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 16 * 1024 * 1024;
+
   size_t decoded_image_working_set_budget_bytes = 128 * 1024 * 1024;
 #if !BUILDFLAG(IS_ANDROID)
   if (for_renderer) {

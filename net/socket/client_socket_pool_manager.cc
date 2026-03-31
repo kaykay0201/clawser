@@ -12,6 +12,7 @@
 #include "base/check_op.h"
 #include "base/metrics/field_trial_params.h"
 #include "build/build_config.h"
+#include "clawser/clawser_config.h"
 #include "net/base/features.h"
 #include "net/base/load_flags.h"
 #include "net/base/proxy_chain.h"
@@ -142,6 +143,8 @@ ClientSocketPoolManager::~ClientSocketPoolManager() = default;
 int ClientSocketPoolManager::max_sockets_per_pool(
     HttpNetworkSession::SocketPoolType pool_type) {
   DCHECK_LT(pool_type, HttpNetworkSession::NUM_SOCKET_POOL_TYPES);
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 32;
   return g_max_sockets_per_pool[pool_type];
 }
 
@@ -161,6 +164,8 @@ void ClientSocketPoolManager::set_max_sockets_per_pool(
 int ClientSocketPoolManager::max_sockets_per_group(
     HttpNetworkSession::SocketPoolType pool_type) {
   DCHECK_LT(pool_type, HttpNetworkSession::NUM_SOCKET_POOL_TYPES);
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 6;
   return g_max_sockets_per_group[pool_type];
 }
 

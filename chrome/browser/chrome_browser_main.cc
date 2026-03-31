@@ -110,6 +110,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
+#include "clawser/clawser_config.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/logging_chrome.h"
@@ -1501,6 +1502,21 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   // Do any initializating in the browser process that requires all threads
   // running.
   browser_process_->PreMainMessageLoopRun();
+
+  {
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
+    if (command_line.HasSwitch(switches::kClawserConfig)) {
+      std::string config_path =
+          command_line.GetSwitchValueASCII(switches::kClawserConfig);
+      if (clawser::ClawserConfigManager::GetInstance().LoadFromFile(
+              config_path)) {
+        LOG(INFO) << "Clawser config loaded successfully from: " << config_path;
+      } else {
+        LOG(ERROR) << "Failed to load clawser config from: " << config_path;
+      }
+    }
+  }
 
 #if BUILDFLAG(IS_WIN)
   // If the command line specifies 'uninstall' then we need to work here

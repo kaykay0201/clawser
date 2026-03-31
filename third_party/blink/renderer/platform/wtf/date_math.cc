@@ -87,6 +87,9 @@
 #include <limits>
 #include <memory>
 
+#include "clawser/clawser_config.h"
+#include "clawser/timezone_spoof.h"
+
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -661,11 +664,19 @@ std::optional<base::Time> ParseDateFromNullTerminatedCharacters(
 
   // fall back to local timezone
   if (!have_tz) {
-    std::unique_ptr<icu::TimeZone> timezone(icu::TimeZone::createDefault());
+    std::unique_ptr<icu::TimeZone> timezone;
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      std::string tz_id = clawser::GetSpoofedTimezone();
+      if (!tz_id.empty()) {
+        icu::UnicodeString icu_tz_id =
+            icu::UnicodeString::fromUTF8(icu::StringPiece(tz_id));
+        timezone.reset(icu::TimeZone::createTimeZone(icu_tz_id));
+      }
+    }
+    if (!timezone)
+      timezone.reset(icu::TimeZone::createDefault());
     int32_t raw_offset, dst_offset;
     UErrorCode status = U_ZERO_ERROR;
-    // Handle the conversion of localtime to UTC the same way as the
-    // latest ECMA 262 spec for Javascript (v8 does that, too).
     static_cast<const icu::BasicTimeZone*>(timezone.get())
         ->getOffsetFromLocal(ms, UCAL_TZ_LOCAL_FORMER, UCAL_TZ_LOCAL_FORMER,
                              raw_offset, dst_offset, status);
@@ -678,7 +689,17 @@ std::optional<base::Time> ParseDateFromNullTerminatedCharacters(
 
 base::TimeDelta ConvertToLocalTime(base::Time time) {
   double ms = time.InMillisecondsFSinceUnixEpoch();
-  std::unique_ptr<icu::TimeZone> timezone(icu::TimeZone::createDefault());
+  std::unique_ptr<icu::TimeZone> timezone;
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string tz_id = clawser::GetSpoofedTimezone();
+    if (!tz_id.empty()) {
+      icu::UnicodeString icu_tz_id =
+          icu::UnicodeString::fromUTF8(icu::StringPiece(tz_id));
+      timezone.reset(icu::TimeZone::createTimeZone(icu_tz_id));
+    }
+  }
+  if (!timezone)
+    timezone.reset(icu::TimeZone::createDefault());
   int32_t raw_offset, dst_offset;
   UErrorCode status = U_ZERO_ERROR;
   timezone->getOffset(ms, false, raw_offset, dst_offset, status);

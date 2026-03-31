@@ -4,6 +4,9 @@
 
 #include "net/dns/host_resolver_manager.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/dns_spoof.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -802,6 +805,15 @@ HostCache::Entry HostResolverManager::ResolveLocally(
     std::optional<HostCache::EntryStaleness>* out_stale_info) {
   DCHECK(out_stale_info);
   *out_stale_info = std::nullopt;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (clawser::ShouldPreventDirectDns()) {
+      if (!ip_address.IsValid()) {
+        return HostCache::Entry(ERR_NAME_NOT_RESOLVED,
+                                HostCache::Entry::SOURCE_UNKNOWN);
+      }
+    }
+  }
 
   CreateTaskSequence(job_key, cache_usage, secure_dns_policy, out_tasks);
 

@@ -375,6 +375,7 @@ component("core") {
     ":make_deprecation_info",
     "//base",
     "//build:chromeos_buildflags",
+    "//clawser",
     "//components/attribution_reporting",
     "//components/attribution_reporting:mojom_blink",
     "//components/paint_preview/common",

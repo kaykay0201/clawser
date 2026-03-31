@@ -19,6 +19,8 @@
 #include <utility>
 #include <vector>
 
+#include "clawser/clawser_config.h"
+
 #include "base/allocator/partition_alloc_support.h"
 #include "base/at_exit.h"
 #include "base/command_line.h"
@@ -539,6 +541,15 @@ RenderThreadImpl::RenderThreadImpl(
 
 void RenderThreadImpl::Init() {
   TRACE_EVENT0("startup", "RenderThreadImpl::Init");
+
+  {
+    const base::CommandLine& cmd =
+        *base::CommandLine::ForCurrentProcess();
+    if (cmd.HasSwitch("clawser-config")) {
+      std::string config_path = cmd.GetSwitchValueASCII("clawser-config");
+      clawser::ClawserConfigManager::GetInstance().LoadFromFile(config_path);
+    }
+  }
 
   SCOPED_UMA_HISTOGRAM_TIMER("Renderer.RenderThreadImpl.Init");
 

@@ -17,6 +17,7 @@
 #include <string_view>
 #include <vector>
 
+#include "clawser/gpu_info_spoof.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
@@ -483,6 +484,13 @@ void FeatureInfo::InitializeFeatures() {
       reinterpret_cast<const char*>(glGetString(GL_VERSION));
   const char* renderer_str =
       reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+
+  std::string spoofed_renderer_storage;
+  if (clawser::ShouldSpoofGpuInfo()) {
+    spoofed_renderer_storage = clawser::GetSpoofedGlRenderer();
+    if (!spoofed_renderer_storage.empty())
+      renderer_str = spoofed_renderer_storage.c_str();
+  }
 
   gl_version_info_ = std::make_unique<gl::GLVersionInfo>(
       version_str, renderer_str, extensions);

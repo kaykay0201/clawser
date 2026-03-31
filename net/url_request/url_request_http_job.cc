@@ -15,6 +15,7 @@
 #include "base/base_switches.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "clawser/clawser_config.h"
 #include "base/compiler_specific.h"
 #include "base/containers/adapters.h"
 #include "base/feature_list.h"
@@ -760,10 +761,22 @@ void URLRequestHttpJob::AddExtraHeaders() {
       request()->context()->enable_zstd());
 
   if (http_user_agent_settings_) {
-    // Only add default Accept-Language if the request didn't have it
-    // specified.
     std::string accept_language =
         http_user_agent_settings_->GetAcceptLanguage();
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      const auto& config =
+          clawser::ClawserConfigManager::GetInstance().GetConfig();
+      const auto& langs = config.navigator.languages;
+      if (!langs.empty()) {
+        std::string raw;
+        for (size_t i = 0; i < langs.size(); ++i) {
+          if (i > 0)
+            raw += ",";
+          raw += langs[i];
+        }
+        accept_language = HttpUtil::GenerateAcceptLanguageHeader(raw);
+      }
+    }
     if (!accept_language.empty()) {
       request_info_.extra_headers.SetHeaderIfMissing(
           HttpRequestHeaders::kAcceptLanguage,

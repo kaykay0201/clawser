@@ -9,6 +9,9 @@
 
 #include "net/socket/socks5_client_socket.h"
 
+#include "clawser/clawser_config.h"
+#include "clawser/dns_spoof.h"
+
 #include <utility>
 
 #include "base/compiler_specific.h"

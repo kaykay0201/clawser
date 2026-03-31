@@ -9,6 +9,7 @@
 
 #include "base/metrics/histogram_functions.h"
 #include "base/time/time.h"
+#include "clawser/clawser_config.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
@@ -265,6 +266,19 @@ void Permissions::TaskComplete(
   if (!resolver->GetExecutionContext() ||
       resolver->GetExecutionContext()->IsContextDestroyed())
     return;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    switch (descriptor->name) {
+      case PermissionName::NOTIFICATIONS:
+      case PermissionName::GEOLOCATION:
+      case PermissionName::AUDIO_CAPTURE:
+      case PermissionName::VIDEO_CAPTURE:
+        result = mojom::blink::PermissionStatus::DENIED;
+        break;
+      default:
+        break;
+    }
+  }
 
   PermissionStatusListener* listener =
       GetOrCreatePermissionStatusListener(result, std::move(descriptor));

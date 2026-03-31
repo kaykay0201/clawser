@@ -36,6 +36,8 @@
 #include <utility>
 
 #include "base/debug/alias.h"
+#include "clawser/clawser_config.h"
+#include "clawser/screen_spoof.h"
 #include "build/build_config.h"
 #include "cc/animation/animation_host.h"
 #include "cc/animation/animation_timeline.h"
@@ -588,6 +590,11 @@ gfx::Rect ChromeClientImpl::LocalRootToScreenDIPs(
 
 float ChromeClientImpl::WindowToViewportScalar(LocalFrame* frame,
                                                const float scalar_value) const {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    double spoofed_dpr = clawser::GetSpoofedDevicePixelRatio();
+    if (spoofed_dpr > 0.0)
+      return scalar_value * static_cast<float>(spoofed_dpr);
+  }
 
   // TODO(darin): Clean up callers to not pass null. E.g., VisualViewport::
   // ScrollbarThickness() is one such caller. See https://pastebin.com/axgctw0N

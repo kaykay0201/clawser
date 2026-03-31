@@ -2793,6 +2793,7 @@ component("i18n") {
   deps = [
     "//build:chromecast_buildflags",
     "//build:chromeos_buildflags",
+    "//clawser",
   ]
 
   if (!is_debug) {

@@ -505,6 +505,10 @@ void SetRuntimeFeaturesFromCommandLine(const base::CommandLine& command_line) {
       WebRuntimeFeatures::EnableAutomationControlled(true);
     }
   }
+
+  if (command_line.HasSwitch("clawser-config")) {
+    WebRuntimeFeatures::EnableAutomationControlled(false);
+  }
 }
 
 // Sets blink runtime features that depend on a combination

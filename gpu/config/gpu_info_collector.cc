@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "clawser/gpu_info_spoof.h"
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -624,6 +625,8 @@ bool CollectGraphicsInfoGL(GPUInfo* gpu_info, gl::GLDisplay* display) {
   if (!gl_info.driver_version.empty() && active_gpu.driver_version.empty()) {
     active_gpu.driver_version = gl_info.driver_version;
   }
+
+  gpu_info->ApplyClawserOverrides();
 
   GLint max_samples = 0;
   if (gl_info.IsAtLeastGLES(3, 0) ||

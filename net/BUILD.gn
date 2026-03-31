@@ -1116,6 +1116,7 @@ component("net") {
     ":cronet_buildflags",
     ":net_deps",
     "//build:chromeos_buildflags",
+    "//clawser",
     "//components/miracle_parameter/common",
     "//components/network_time/time_tracker",
     "//net/http:transport_security_state_generated_files",

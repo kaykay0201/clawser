@@ -6,6 +6,8 @@
 
 #include <utility>
 
+#include "clawser/clawser_config.h"
+
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
@@ -390,6 +392,18 @@ ScriptPromise<IDLSequence<BluetoothDevice>> Bluetooth::getDevices(
     return ScriptPromise<IDLSequence<BluetoothDevice>>();
   }
 
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (!clawser::ClawserConfigManager::GetInstance()
+             .GetConfig()
+             .bluetooth_enabled) {
+      auto* resolver = MakeGarbageCollected<
+          ScriptPromiseResolver<IDLSequence<BluetoothDevice>>>(
+          script_state, exception_state.GetContext());
+      resolver->Resolve(HeapVector<Member<BluetoothDevice>>());
+      return resolver->Promise();
+    }
+  }
+
   LocalFrame* frame = window->GetFrame();
   if (frame && frame->IsAdScriptInStack()) {
     UseCounter::Count(GetExecutionContext(),
@@ -425,6 +439,20 @@ ScriptPromise<BluetoothDevice> Bluetooth::requestDevice(
   if (!IsFeatureEnabled(window)) {
     exception_state.ThrowSecurityError(kPermissionsPolicyBlocked);
     return EmptyPromise();
+  }
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    if (!clawser::ClawserConfigManager::GetInstance()
+             .GetConfig()
+             .bluetooth_enabled) {
+      exception_state.ThrowSecurityError(
+          "Web Bluetooth API is disabled by browser policy.");
+      return ScriptPromise<BluetoothDevice>::RejectWithDOMException(
+          script_state,
+          MakeGarbageCollected<DOMException>(
+              DOMExceptionCode::kNotFoundError,
+              "User cancelled the requestDevice() chooser."));
+    }
   }
 
   AddUnsupportedPlatformConsoleMessage(window);

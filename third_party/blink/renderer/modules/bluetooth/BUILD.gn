@@ -40,6 +40,7 @@ blink_modules_sources("bluetooth") {
 
   deps = [
     "//build:chromeos_buildflags",
+    "//clawser",
     "//device/bluetooth/public/mojom:mojom_blink",
   ]
 }

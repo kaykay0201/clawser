@@ -16,6 +16,8 @@
 #include <string>
 
 #include "base/debug/alias.h"
+#include "clawser/clawser_config.h"
+#include "clawser/timezone_spoof.h"
 #include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -54,6 +56,11 @@
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || \
     BUILDFLAG(IS_CHROMEOS) || (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CASTOS))
+#include "third_party/icu/source/i18n/unicode/timezone.h"
+#endif
+
+#if BUILDFLAG(IS_WIN)
+#include "third_party/icu/source/common/unicode/unistr.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 #endif
 
@@ -429,7 +436,25 @@ bool InitializeICU() {
 #error Unsupported ICU_UTIL_DATA_IMPL value
 #endif  // (ICU_UTIL_DATA_IMPL == ICU_UTIL_DATA_STATIC)
 
-  return DoCommonInitialization();
+  if (!DoCommonInitialization())
+    return false;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    std::string spoofed_tz = clawser::GetSpoofedTimezone();
+    if (!spoofed_tz.empty()) {
+      icu::UnicodeString icu_tz_id =
+          icu::UnicodeString::fromUTF8(icu::StringPiece(spoofed_tz));
+      icu::TimeZone* spoofed_zone =
+          icu::TimeZone::createTimeZone(icu_tz_id);
+      if (spoofed_zone && *spoofed_zone != icu::TimeZone::getUnknown()) {
+        icu::TimeZone::adoptDefault(spoofed_zone);
+      } else {
+        delete spoofed_zone;
+      }
+    }
+  }
+
+  return true;
 }
 
 void AllowMultipleInitializeCallsForTesting() {

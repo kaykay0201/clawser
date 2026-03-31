@@ -69,6 +69,7 @@
 #include "base/tracing/protos/chrome_track_event.pbzero.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
+#include "clawser/clawser_config.h"
 #include "components/input/utils.h"
 #include "components/metrics/histogram_controller.h"
 #include "components/metrics/single_sample_metrics.h"
@@ -1291,6 +1292,9 @@ size_t RenderProcessHostImpl::GetPlatformMaxRendererProcessCount() {
 
 // static
 size_t RenderProcessHost::GetMaxRendererProcessCount() {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 4;
+
   if (g_max_renderer_count_override)
     return g_max_renderer_count_override;
 

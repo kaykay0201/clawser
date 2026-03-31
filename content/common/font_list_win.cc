@@ -15,6 +15,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
+#include "clawser/clawser_config.h"
+#include "clawser/font_spoof.h"
 #include "ui/gfx/win/direct_write.h"
 
 namespace content {
@@ -23,6 +25,18 @@ base::Value::List GetFontList_SlowBlocking() {
   TRACE_EVENT0("fonts", "GetFontList_SlowBlocking");
 
   base::Value::List font_list;
+
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded() &&
+      clawser::ShouldControlFonts()) {
+    std::vector<std::string> allowed = clawser::GetAllowedFonts();
+    for (const auto& font_name : allowed) {
+      base::Value::List font_entry;
+      font_entry.Append(font_name);
+      font_entry.Append(font_name);
+      font_list.Append(std::move(font_entry));
+    }
+    return font_list;
+  }
 
   Microsoft::WRL::ComPtr<IDWriteFactory> factory;
   gfx::win::CreateDWriteFactory(&factory);

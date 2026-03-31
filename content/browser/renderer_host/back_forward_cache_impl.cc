@@ -13,6 +13,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/check.h"
+#include "clawser/clawser_config.h"
 #include "base/containers/contains.h"
 #include "base/containers/enum_set.h"
 #include "base/functional/bind.h"
@@ -648,6 +649,8 @@ base::TimeDelta BackForwardCacheImpl::GetTimeToLiveInBackForwardCache(
 size_t BackForwardCacheImpl::GetCacheSize() {
   if (!IsBackForwardCacheEnabled())
     return 0;
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded())
+    return 1;
   if (base::FeatureList::IsEnabled(kBackForwardCacheSize)) {
     return kBackForwardCacheSizeCacheSize.Get();
   }
