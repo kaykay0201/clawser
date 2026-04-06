@@ -366,10 +366,9 @@ bool FetchSession::Init(const std::string& config_json_path) {
   return true;
 }
 
-std::unique_ptr<FetchResponse> FetchSession::Send(
-    std::unique_ptr<FetchRequest> request) {
+net::HttpRequestHeaders FetchSession::PrepareHeaders(
+    const FetchRequest& request) {
   // --- Step 1: Merge all header sources into a flat list (caller wins). ---
-  // We use a vector of pairs so we can track both the canonical name and value.
   std::vector<std::pair<std::string, std::string>> merged;
 
   auto find_merged = [&](const std::string& name)
@@ -390,7 +389,7 @@ std::unique_ptr<FetchResponse> FetchSession::Send(
 
   // Caller headers override defaults.
   {
-    net::HttpRequestHeaders::Iterator it(request->headers);
+    net::HttpRequestHeaders::Iterator it(request.headers);
     while (it.GetNext()) {
       auto* existing = find_merged(it.name());
       if (existing) {
@@ -403,10 +402,9 @@ std::unique_ptr<FetchResponse> FetchSession::Send(
 
   // Auto-calculate Host from URL if not explicitly set.
   if (!find_merged("Host")) {
-    GURL request_url(request->url);
+    GURL request_url(request.url);
     if (request_url.is_valid()) {
       std::string host = request_url.host();
-      // Only include port if non-default for the scheme.
       if (request_url.has_port()) {
         int port = request_url.IntPort();
         if (!((request_url.SchemeIs("https") && port == 443) ||
@@ -418,20 +416,15 @@ std::unique_ptr<FetchResponse> FetchSession::Send(
     }
   }
 
-  // --- Step 2: Rebuild headers in Chrome's canonical order. ---
-  request->headers.Clear();
+  // --- Step 2: Rebuild in Chrome's canonical order. ---
+  net::HttpRequestHeaders result;
 
-  // Emit canonical headers first, in the correct order.
   for (size_t i = 0; i < kCanonicalHeaderCount; ++i) {
     auto* entry = find_merged(kCanonicalHeaderOrder[i]);
-    if (entry) {
-      // Use the canonical casing from the table, not whatever the caller used.
-      request->headers.SetHeader(kCanonicalHeaderOrder[i], entry->second);
-    }
+    if (entry)
+      result.SetHeader(kCanonicalHeaderOrder[i], entry->second);
   }
 
-  // Append any non-canonical headers at the end (e.g. custom headers like
-  // X-Requested-With, Origin, Referer, Cookie, Content-Type, etc.).
   for (const auto& [name, value] : merged) {
     bool is_canonical = false;
     for (size_t i = 0; i < kCanonicalHeaderCount; ++i) {
@@ -441,8 +434,15 @@ std::unique_ptr<FetchResponse> FetchSession::Send(
       }
     }
     if (!is_canonical)
-      request->headers.SetHeaderIfMissing(name, value);
+      result.SetHeaderIfMissing(name, value);
   }
+
+  return result;
+}
+
+std::unique_ptr<FetchResponse> FetchSession::Send(
+    std::unique_ptr<FetchRequest> request) {
+  request->headers = PrepareHeaders(*request);
 
   auto delegate = std::make_unique<BlockingFetchDelegate>();
   delegate->set_max_redirects(request->max_redirects);
@@ -724,6 +724,33 @@ void clawser_request_set_timeout_ms(ClawserRequest* req, uint32_t timeout_ms) {
   if (!req) return;
   auto* rws = reinterpret_cast<clawser::fetch::RequestWithSession*>(req);
   rws->request->timeout_ms = timeout_ms;
+}
+
+size_t clawser_request_preview_headers(ClawserRequest* req) {
+  if (!req) return 0;
+  auto* rws = reinterpret_cast<clawser::fetch::RequestWithSession*>(req);
+  auto headers = rws->session->PrepareHeaders(*rws->request);
+  rws->preview_cache.clear();
+  net::HttpRequestHeaders::Iterator it(headers);
+  while (it.GetNext())
+    rws->preview_cache.emplace_back(it.name(), it.value());
+  return rws->preview_cache.size();
+}
+
+const char* clawser_request_preview_header_name_at(ClawserRequest* req,
+                                                   size_t index) {
+  if (!req) return nullptr;
+  auto* rws = reinterpret_cast<clawser::fetch::RequestWithSession*>(req);
+  if (index >= rws->preview_cache.size()) return nullptr;
+  return rws->preview_cache[index].first.c_str();
+}
+
+const char* clawser_request_preview_header_value_at(ClawserRequest* req,
+                                                    size_t index) {
+  if (!req) return nullptr;
+  auto* rws = reinterpret_cast<clawser::fetch::RequestWithSession*>(req);
+  if (index >= rws->preview_cache.size()) return nullptr;
+  return rws->preview_cache[index].second.c_str();
 }
 
 ClawserResponse* clawser_request_send(ClawserRequest* req) {

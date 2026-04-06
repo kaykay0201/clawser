@@ -51,6 +51,9 @@ class FetchSession {
   bool Init(const std::string& config_json_path);
 
   std::unique_ptr<FetchResponse> Send(std::unique_ptr<FetchRequest> request);
+  // Merge session defaults + request headers in Chrome canonical order.
+  // Does not consume the request — safe to call before Send().
+  net::HttpRequestHeaders PrepareHeaders(const FetchRequest& request);
   std::string GetAllCookiesJson();
 
   const net::HttpRequestHeaders& default_headers() const {
@@ -104,6 +107,8 @@ struct RequestWithSession {
 
   raw_ptr<FetchSession> session = nullptr;
   std::unique_ptr<FetchRequest> request;
+  // Cached result from preview_headers.
+  std::vector<std::pair<std::string, std::string>> preview_cache;
 };
 
 void SetLastError(const std::string& error);

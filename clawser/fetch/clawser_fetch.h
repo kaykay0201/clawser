@@ -77,6 +77,19 @@ CLAWSER_FETCH_EXPORT void clawser_request_set_timeout_ms(
     ClawserRequest* req,
     uint32_t timeout_ms);
 
+// Preview the final merged + ordered request headers (as they would appear on
+// the wire) WITHOUT sending. Does not consume req — safe to call before send.
+// Returns header count. Use clawser_request_preview_header_name_at /
+// clawser_request_preview_header_value_at to read individual headers.
+CLAWSER_FETCH_EXPORT size_t clawser_request_preview_headers(
+    ClawserRequest* req);
+CLAWSER_FETCH_EXPORT const char* clawser_request_preview_header_name_at(
+    ClawserRequest* req,
+    size_t index);
+CLAWSER_FETCH_EXPORT const char* clawser_request_preview_header_value_at(
+    ClawserRequest* req,
+    size_t index);
+
 // Blocking send. Consumes req (do not use after). Returns NULL on error.
 CLAWSER_FETCH_EXPORT ClawserResponse* clawser_request_send(
     ClawserRequest* req);
