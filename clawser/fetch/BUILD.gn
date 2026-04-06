@@ -1,0 +1,17 @@
+shared_library("clawser_fetch") {
+  sources = [
+    "clawser_fetch.h",
+    "clawser_fetch_export.h",
+    "clawser_fetch_impl.cc",
+    "clawser_fetch_impl.h",
+  ]
+
+  defines = [ "IS_CLAWSER_FETCH_IMPL" ]
+
+  deps = [
+    "//base",
+    "//clawser",
+    "//net",
+    "//url",
+  ]
+}
