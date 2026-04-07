@@ -5,6 +5,7 @@
 #include "clawser/browser/browser_controller.h"
 
 #include "base/json/json_writer.h"
+#include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -33,7 +34,9 @@ namespace clawser::browser {
 BrowserController::BrowserController(
     headless::HeadlessBrowser* browser,
     headless::HeadlessBrowserContext* context)
-    : browser_(browser), context_(context) {}
+    : browser_(browser), context_(context) {
+  VLOG(1) << "[clawser] BrowserController created";
+}
 
 BrowserController::~BrowserController() {
   // CdpClient must be destroyed before pages are torn down.
@@ -52,6 +55,7 @@ std::string BrowserController::Navigate(const std::string& url) {
 
   std::string page_id = base::StringPrintf("p%d", next_page_id_++);
   pages_[page_id] = wc;
+  VLOG(1) << "[clawser] Navigate " << page_id << " -> " << url;
 
   // Attach CDP client for capture/replay if watches are registered.
   if (!watch_endpoints_.empty())
@@ -95,6 +99,8 @@ std::string BrowserController::AddWatch(const std::string& endpoint) {
   std::string watch_id = base::StringPrintf("w%d", next_watch_id_++);
   watch_id_to_endpoint_[watch_id] = endpoint;
   endpoint_to_watch_id_[endpoint] = watch_id;
+  VLOG(1) << "[clawser] AddWatch " << watch_id << " -> " << endpoint
+           << " (total: " << watch_endpoints_.size() << ")";
   return watch_id;
 }
 
@@ -114,6 +120,8 @@ content::WebContents* BrowserController::GetWebContents(
 void BrowserController::WaitForCapture(const std::string& watch_id,
                                        uint32_t timeout_ms,
                                        WaitCallback cb) {
+  VLOG(1) << "[clawser] WaitForCapture " << watch_id
+           << " timeout=" << timeout_ms << "ms";
   auto ep_it = watch_id_to_endpoint_.find(watch_id);
   if (ep_it == watch_id_to_endpoint_.end()) {
     std::move(cb).Run(/*timed_out=*/false, base::Value::Dict());
@@ -162,6 +170,7 @@ base::Value::Dict* BrowserController::GetLastCapture(
 
 void BrowserController::OnCaptureReceived(std::string endpoint,
                                           base::Value::Dict data) {
+  VLOG(1) << "[clawser] OnCaptureReceived endpoint=" << endpoint;
   auto wid_it = endpoint_to_watch_id_.find(endpoint);
   if (wid_it == endpoint_to_watch_id_.end())
     return;
@@ -208,6 +217,7 @@ void BrowserController::OnWaitTimeout(PendingWait* waiter) {
 }
 
 void BrowserController::EnsureCdpAttached(const std::string& page_id) {
+  VLOG(1) << "[clawser] EnsureCdpAttached page=" << page_id;
   if (!cdp_client_) {
     cdp_client_ = std::make_unique<CdpClient>();
     cdp_client_->SetCaptureCallback(base::BindRepeating(
@@ -233,6 +243,7 @@ content::StoragePartition* BrowserController::GetStoragePartition() {
 
 void BrowserController::OnResponseReceived(std::string endpoint,
                                            base::Value::Dict response) {
+  VLOG(1) << "[clawser] OnResponseReceived endpoint=" << endpoint;
   auto wid_it = endpoint_to_watch_id_.find(endpoint);
   if (wid_it == endpoint_to_watch_id_.end())
     return;
@@ -258,6 +269,7 @@ void BrowserController::OpenWebSocket(
     const std::string& page_id,
     const std::string& url,
     base::OnceCallback<void(std::string)> cb) {
+  VLOG(1) << "[clawser] OpenWebSocket url=" << url;
   auto* sp = GetStoragePartition();
   if (!sp) {
     std::move(cb).Run("");
@@ -337,6 +349,9 @@ void BrowserController::FetchRequest(
     const std::string* body,
     uint32_t timeout_ms,
     FetchCallback cb) {
+  VLOG(1) << "[clawser] FetchRequest " << method << " " << url
+           << " timeout=" << timeout_ms << "ms"
+           << " body=" << (body ? body->size() : 0) << "b";
   auto* sp = GetStoragePartition();
   if (!sp) {
     std::move(cb).Run(0, base::Value::Dict(), "", "");
@@ -432,6 +447,7 @@ void BrowserController::FetchRequest(
 void BrowserController::GetCookies(
     const std::string& url,
     base::OnceCallback<void(base::Value::List)> cb) {
+  VLOG(1) << "[clawser] GetCookies url=" << (url.empty() ? "(all)" : url);
   auto* sp = GetStoragePartition();
   if (!sp) {
     std::move(cb).Run(base::Value::List());

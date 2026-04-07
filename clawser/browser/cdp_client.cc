@@ -30,6 +30,7 @@ void CdpClient::AttachToPage(content::WebContents* wc) {
     return;
   }
 
+  VLOG(1) << "[clawser-cdp] AttachToPage, enabling Runtime+Debugger+Page+Network";
   // Reset isolated world state for the new page.
   isolated_context_id_ = 0;
   main_frame_id_.clear();
@@ -65,8 +66,10 @@ base::Value::Dict* CdpClient::GetLastCapture(const std::string& endpoint) {
 
 void CdpClient::Replay(const std::string& endpoint,
                         base::OnceCallback<void(base::Value::Dict)> cb) {
+  VLOG(1) << "[clawser-cdp] Replay endpoint=" << endpoint;
   auto it = captures_.find(endpoint);
   if (it == captures_.end() || it->second.caller_object_id.empty()) {
+    VLOG(1) << "[clawser-cdp] Replay: no capture/objectId for " << endpoint;
     std::move(cb).Run(base::Value::Dict());
     return;
   }
@@ -289,6 +292,7 @@ void CdpClient::OnCdpResponse(int id, base::Value::Dict result) {
 
 void CdpClient::OnCdpEvent(const std::string& method,
                             base::Value::Dict params) {
+  VLOG(2) << "[clawser-cdp] Event: " << method;
   if (method == "Runtime.consoleAPICalled") {
     OnConsoleAPICalled(std::move(params));
   } else if (method == "Debugger.paused") {
@@ -397,6 +401,8 @@ void CdpClient::OnConsoleAPICalled(base::Value::Dict params) {
 }
 
 void CdpClient::OnDebuggerPaused(base::Value::Dict params) {
+  VLOG(1) << "[clawser-cdp] Debugger.paused, expecting_pause="
+           << expecting_pause_;
   const base::Value::List* call_frames = params.FindList("callFrames");
 
   if (!expecting_pause_ || !call_frames) {
@@ -413,6 +419,8 @@ void CdpClient::OnDebuggerPaused(base::Value::Dict params) {
 void CdpClient::CaptureCallerAndResume(const std::string& endpoint,
                                         base::Value::Dict capture_data,
                                         const base::Value::List& call_frames) {
+  VLOG(1) << "[clawser-cdp] CaptureCallerAndResume endpoint=" << endpoint
+           << " frames=" << call_frames.size();
   // call_frames[0] = our hook (at debugger;)
   // call_frames[1] = the caller that invoked fetch/XHR
   // We want to get a persistent reference to the caller function.

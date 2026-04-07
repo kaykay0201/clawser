@@ -74,6 +74,8 @@ void MessageHandler::HandleMessage(std::string json_line) {
     return;
   }
 
+  VLOG(1) << "[clawser] cmd=" << *cmd_type << " id=" << id;
+
   if (*cmd_type == "navigate") {
     HandleNavigate(id, cmd);
   } else if (*cmd_type == "watch") {
@@ -106,6 +108,7 @@ void MessageHandler::HandleMessage(std::string json_line) {
 }
 
 void MessageHandler::Reply(int id, base::Value::Dict result) {
+  VLOG(1) << "[clawser] Reply id=" << id << " ok=true";
   result.Set("id", id);
   result.Set("ok", true);
 
@@ -118,6 +121,7 @@ void MessageHandler::Reply(int id, base::Value::Dict result) {
 }
 
 void MessageHandler::ReplyError(int id, const std::string& error) {
+  VLOG(1) << "[clawser] Reply id=" << id << " error=" << error;
   base::Value::Dict result;
   result.Set("id", id);
   result.Set("ok", false);

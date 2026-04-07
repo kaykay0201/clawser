@@ -5,6 +5,7 @@
 #include "clawser/browser/watcher_engine.h"
 
 #include "base/command_line.h"
+#include "base/logging.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -28,6 +29,8 @@ void ClawserWatcherObserver::DidCreateScriptContext(
   if (world_id != 0)
     return;
 
+  VLOG(1) << "[clawser-hooks] DidCreateScriptContext world=" << world_id;
+
   // 1. Inject window.chrome object (C++ V8 API, undetectable)
   SetupWindowChromeObject(context);
 
@@ -45,8 +48,12 @@ void ClawserWatcherObserver::InjectWatcherHooks(
     return;
 
   std::string script = BuildHookScript();
-  if (script.empty())
+  if (script.empty()) {
+    VLOG(1) << "[clawser-hooks] No watch endpoints, skipping hook injection";
     return;
+  }
+  VLOG(1) << "[clawser-hooks] Injecting watcher hooks ("
+           << script.size() << " bytes)";
 
   v8::Isolate* isolate = context->GetIsolate();
   v8::HandleScope handle_scope(isolate);

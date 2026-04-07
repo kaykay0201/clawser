@@ -4,6 +4,7 @@
 
 #include "clawser/browser/net_websocket.h"
 
+#include "base/logging.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "url/origin.h"
@@ -42,6 +43,7 @@ void NetWebSocket::Connect(
     network::mojom::NetworkContext* network_context,
     const url::Origin& origin,
     base::OnceCallback<void(bool)> cb) {
+  VLOG(1) << "[clawser-ws] Connect " << url.spec();
   connect_callback_ = std::move(cb);
 
   std::vector<network::mojom::HttpHeaderPtr> headers;
@@ -138,6 +140,8 @@ void NetWebSocket::OnOpeningHandshakeStarted(
 void NetWebSocket::OnFailure(const std::string& message,
                              int32_t net_error,
                              int32_t response_code) {
+  VLOG(1) << "[clawser-ws] OnFailure: " << message
+           << " net_error=" << net_error << " http=" << response_code;
   closed_ = true;
   if (connect_callback_)
     std::move(connect_callback_).Run(false);
@@ -154,6 +158,7 @@ void NetWebSocket::OnConnectionEstablished(
   readable_ = std::move(readable);
   writable_ = std::move(writable);
   connected_ = true;
+  VLOG(1) << "[clawser-ws] Connected, starting receive";
 
   // Watch the readable pipe for incoming data.
   read_watcher_.Watch(

@@ -255,6 +255,7 @@ StartupState g_startup_state;
 class ClawserBrowserApp {
  public:
   void OnBrowserStart(headless::HeadlessBrowser* browser) {
+    LOG(INFO) << "[clawser] Browser started, creating context...";
     browser_ = browser;
 
     // Create incognito browser context
@@ -351,6 +352,7 @@ int main(int argc, const char** argv) {
   }
 
   // Browser process — read init command from stdin BEFORE blocking
+  LOG(INFO) << "[clawser] Browser process starting, reading init...";
   auto init_cmd = clawser::browser::ReadInitCommand();
   int init_id = init_cmd.FindInt("id").value_or(0);
 
@@ -359,8 +361,10 @@ int main(int argc, const char** argv) {
   const base::Value::Dict* seed_dict = init_cmd.FindDict("seed");
   if (seed_dict) {
     seed = clawser::browser::ParseSeedFromJson(*seed_dict);
+    LOG(INFO) << "[clawser] Using provided seed, hw=" << seed.hw_seed;
   } else {
     seed = clawser::browser::GenerateRandomSeed();
+    LOG(INFO) << "[clawser] Generated random seed, hw=" << seed.hw_seed;
   }
 
   // Parse watch list
