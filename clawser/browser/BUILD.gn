@@ -1,0 +1,36 @@
+import("//build/config/features.gni")
+
+executable("clawser_browser") {
+  sources = [
+    "browser_controller.cc",
+    "browser_controller.h",
+    "cdp_client.cc",
+    "cdp_client.h",
+    "clawser_browser_main.cc",
+    "message_handler.cc",
+    "message_handler.h",
+    "net_websocket.cc",
+    "net_websocket.h",
+    "watch_registry.h",
+  ]
+
+  deps = [
+    "//base",
+    "//clawser",
+    "//content/public/app",
+    "//content/public/browser",
+    "//content/public/common",
+    "//headless:headless_shell_lib",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+
+  if (is_win) {
+    deps += [
+      "//build/win:default_exe_manifest",
+      "//sandbox/win:sandbox",
+    ]
+  }
+}

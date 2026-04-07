@@ -15,6 +15,8 @@ The fork branch is `master` (remote: `origin/clawser-patched`). The remote is `h
 ```bash
 export DEPOT_TOOLS_WIN_TOOLCHAIN=0
 export GYP_MSVS_OVERRIDE_PATH="C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools"
+export GYP_MSVS_VERSION=2022
+export vs2022_install="C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools"
 ```
 
 **Paths on this machine:**
@@ -27,14 +29,23 @@ export GYP_MSVS_OVERRIDE_PATH="C:/Program Files (x86)/Microsoft Visual Studio/20
 # === Environment setup (run once per shell session) ===
 export DEPOT_TOOLS_WIN_TOOLCHAIN=0
 export GYP_MSVS_OVERRIDE_PATH="C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools"
+export GYP_MSVS_VERSION=2022
+export vs2022_install="C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools"
 
 # === Generate build files (after BUILD.gn changes) ===
-buildtools/win/gn.exe gen out/Default
+buildtools/win/gn.exe gen out/Default   # Dev (component build, fast incremental)
+buildtools/win/gn.exe gen out/Release   # Release (standalone DLL for distribution)
 
-# === Build targets ===
+# === Build targets (dev) ===
 C:/depot_tools/ninja.exe -C out/Default chrome           # Full Chrome
-C:/depot_tools/ninja.exe -C out/Default clawser_fetch    # Fetch engine DLL only
+C:/depot_tools/ninja.exe -C out/Default clawser_fetch    # Fetch engine DLL (dev only)
+C:/depot_tools/ninja.exe -C out/Default clawser_browser  # Headless browser exe
 C:/depot_tools/ninja.exe -C out/Default unit_tests       # Unit tests
+
+# === Build standalone DLL for distribution ===
+# IMPORTANT: ALWAYS use out/Release for shipping. out/Default produces DLLs
+# that depend on base.dll, net.dll, etc. which don't exist outside the build dir.
+C:/depot_tools/ninja.exe -C out/Release clawser_fetch    # Standalone ~15MB DLL
 
 # === Build a single file (note the trailing ^) ===
 C:/depot_tools/ninja.exe -C out/Default ../../base/logging.cc^
@@ -197,6 +208,90 @@ Files follow a consistent naming convention:
 3. At the integration site, include the relevant clawser header, guard with `ClawserConfigManager::GetInstance().IsLoaded()`, and apply the override.
 4. Add the consuming target to `clawser/BUILD.gn`'s `visibility` list.
 5. For noise functions: use `Xorshift128Plus` with the appropriate seed from `config.noise_seeds` so fingerprints are deterministic per-profile.
+
+## Clawser Browser (Heavy Engine) — `clawser/browser/` + `clawser-browser/`
+
+A headless Chromium executable (`clawser_browser.exe`) controlled via stdin/stdout JSON, wrapped by a Rust crate (`clawser-browser`). Unlike `clawser_fetch` (network-only), this runs a full browser with V8, Blink, and all antidetect patches active.
+
+### Build & Run
+
+```bash
+# Build the exe
+C:/depot_tools/ninja.exe -C out/Default clawser_browser -j16
+
+# Run Rust smoke test (requires exe in out/Default/)
+CLAWSER_BROWSER_PATH=out/Default/clawser_browser.exe cargo run --manifest-path clawser-browser/Cargo.toml --example smoke_test
+```
+
+Must run from `out/Default/` (or set working dir there) for component build DLL discovery.
+
+### Architecture
+
+```
+Rust user code → clawser-browser crate → stdin/stdout JSON → clawser_browser.exe
+                                                                  ↓
+                                                         Headless Chromium (single-process)
+                                                           + V8/Blink + net:: + all antidetect
+                                                           + CdpClient (V8 Inspector)
+                                                           + NetWebSocket (Mojo)
+                                                           + SimpleURLLoader (fetch)
+```
+
+### C++ Files (`clawser/browser/`)
+
+| File | Purpose |
+|------|---------|
+| `clawser_browser_main.cc` | Entry point. Reads init from stdin, applies seed config, launches headless Chromium. `WriteJsonLine()` bypasses CRT stdout on Windows |
+| `browser_controller.h/cc` | Page management, JS execution, watch registration, capture routing. Owns `CdpClient` and `NetWebSocket` instances. HTTP fetch via `SimpleURLLoader`, cookies via `CookieManager` |
+| `message_handler.h/cc` | Stdin JSON read loop → command dispatch → stdout JSON replies. Runs stdin on dedicated thread, dispatches to UI thread |
+| `cdp_client.h/cc` | Chrome DevTools Protocol client. Attaches to pages for `Runtime.consoleAPICalled` (capture signals) and `Debugger.paused` (call frame inspection). Supports isolated world evaluation |
+| `net_websocket.h/cc` | Mojo-based WebSocket client. Pure C++ network stack — zero JS, fully antidetect TLS |
+| `watcher_engine.h/cc` | Injects fetch/XHR/WebSocket hooks into V8 contexts at creation time. Hooks signal via `console.debug('__clawser_captured__', data)` + `debugger;` |
+| `chrome_object_setup.h/cc` | Injects `window.chrome` object via V8 C++ API (undetectable) |
+| `watch_registry.h` | Process-global watch endpoint list shared between browser and renderer threads |
+
+### JSON Protocol Commands
+
+| Command | Params | Response |
+|---------|--------|----------|
+| `init` | `seed?, watch?` | `seed` |
+| `navigate` | `url` | `page_id` |
+| `watch` | `endpoint` | `watch_id` |
+| `wait` | `watch_id, timeout_ms?` | `captured` (request + response data) |
+| `replay` | `watch_id` | `captured` (fresh payload from re-invoked caller) |
+| `js` | `page_id, code` | `result` |
+| `fetch` | `method, url, headers?, body?, timeout_ms?` | `status, headers, body, url` |
+| `websocket` | `url` | `ws_id` |
+| `ws_send` | `ws_id, data` | `ok` |
+| `ws_recv` | `ws_id, timeout_ms?` | `data` |
+| `cookies` | `url?` | `cookies[]` |
+| `shutdown` | | `ok` |
+
+### Rust Crate API (`clawser-browser/`)
+
+```rust
+let (browser, seed) = Browser::new()?;
+let page = browser.navigate("https://target.com")?;
+
+// Watch HTTP endpoint — blocks until it fires
+let (re_fetch, gen_payload, resp) = page.watch("/api/v1/setup", 30_000)?;
+let fresh = gen_payload.call()?;   // re-invoke JS caller → new payload
+let replayed = re_fetch.call()?;   // replay exact request → new response
+
+// Watch WebSocket — blocks until WS created
+let (regen_url, url, ws) = page.watch_websock("/api/lobby", 30_000)?;
+ws.send("hello")?;
+let msg = ws.recv(5000)?;
+```
+
+### Key Design Decisions
+
+- **stdout bypass**: On Windows, `RouteStdioToConsole()` in headless mode destroys CRT pipe handles. Raw `HANDLE g_raw_stdout` is saved at process start, `WriteJsonLine()` uses `WriteFile()` directly.
+- **WeakPtr safety**: `StdinReadLoop()` runs on a dedicated thread. Must use `base::Unretained(this)` (not `GetWeakPtr()`) because `WeakPtrFactory` is bound to the UI thread. Safe because destructor calls `stdin_thread_.Stop()` first.
+- **Rust `creation_flags(0)`**: Rust sets `CREATE_NO_WINDOW` by default when spawning. Chromium's CRT needs a console for pipe stdout to work — `cmd.creation_flags(0)` overrides this.
+- **Watch propagation**: Watches use a process-global `GetWatchRegistry()` (in `watch_registry.h`) instead of `--clawser-watch` command line flag. Avoids switch accumulation from repeated `AppendSwitchASCII`.
+- **WebSocket via Mojo**: `NetWebSocket` uses `NetworkContext::CreateWebSocket` directly — no JS injection, same TLS/cookie pool as the page.
+- **Fetch via SimpleURLLoader**: Uses `StoragePartition::GetURLLoaderFactoryForBrowserProcess()` — shares cookies, TLS state, connection pool with the browser.
 
 ## Debugging
 
