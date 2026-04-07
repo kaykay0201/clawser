@@ -25,6 +25,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "url/gurl.h"
@@ -235,11 +236,12 @@ void BrowserController::EnsureCdpAttached(const std::string& page_id) {
 }
 
 content::StoragePartition* BrowserController::GetStoragePartition() {
-  // Get from any active page's WebContents.
-  for (auto& [pid, hwc] : pages_) {
-    auto* wc_impl = headless::HeadlessWebContentsImpl::From(hwc);
-    auto* wc = wc_impl->web_contents();
-    return wc->GetBrowserContext()->GetDefaultStoragePartition();
+  if (!pages_.empty()) {
+    auto* wc_impl =
+        headless::HeadlessWebContentsImpl::From(pages_.begin()->second);
+    return wc_impl->web_contents()
+        ->GetBrowserContext()
+        ->GetDefaultStoragePartition();
   }
   return nullptr;
 }
