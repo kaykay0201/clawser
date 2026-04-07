@@ -211,9 +211,10 @@ void BrowserController::EnsureCdpAttached(const std::string& page_id) {
   if (!cdp_client_) {
     cdp_client_ = std::make_unique<CdpClient>();
     cdp_client_->SetCaptureCallback(base::BindRepeating(
-        &BrowserController::OnCaptureReceived, base::Unretained(this)));
+        &BrowserController::OnCaptureReceived, weak_factory_.GetWeakPtr()));
     cdp_client_->SetResponseCallback(base::BindRepeating(
-        &BrowserController::OnResponseReceived, base::Unretained(this)));
+        &BrowserController::OnResponseReceived,
+        weak_factory_.GetWeakPtr()));
   }
   auto* wc = GetWebContents(page_id);
   if (wc)

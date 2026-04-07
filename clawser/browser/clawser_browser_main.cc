@@ -187,10 +187,10 @@ void ApplySeedToConfig(const Seed& seed) {
   gpu.Set("renderer", hw.gl_renderer);
 
   base::Value::Dict noise;
-  noise.Set("canvas", static_cast<double>(seed.canvas_seed));
-  noise.Set("webgl", static_cast<double>(seed.webgl_seed));
-  noise.Set("audio", static_cast<double>(seed.audio_seed));
-  noise.Set("client_rects", static_cast<double>(seed.client_rects_seed));
+  noise.Set("canvas", base::NumberToString(seed.canvas_seed));
+  noise.Set("webgl", base::NumberToString(seed.webgl_seed));
+  noise.Set("audio", base::NumberToString(seed.audio_seed));
+  noise.Set("client_rects", base::NumberToString(seed.client_rects_seed));
 
   base::Value::Dict media;
   media.Set("audio_inputs", 1);

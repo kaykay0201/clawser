@@ -1,16 +1,24 @@
 #ifndef CLAWSER_CLAWSER_CONFIG_H_
 #define CLAWSER_CLAWSER_CONFIG_H_
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "base/values.h"
+#include "clawser/clawser_export.h"
 
 namespace clawser {
 
-struct BrandVersion {
+// Command-line switch name — used by chrome/, content/, and clawser/browser/.
+// Defined here (not in chrome/common/chrome_switches.h) so content/ layer
+// can reference it without a layering violation.
+inline constexpr char kClawserConfigSwitch[] = "clawser-config";
+
+
+struct CLAWSER_EXPORT BrandVersion {
   BrandVersion();
   BrandVersion(const BrandVersion&);
   BrandVersion& operator=(const BrandVersion&);
@@ -22,7 +30,7 @@ struct BrandVersion {
   std::string version;
 };
 
-struct UserAgentData {
+struct CLAWSER_EXPORT UserAgentData {
   UserAgentData();
   UserAgentData(const UserAgentData&);
   UserAgentData& operator=(const UserAgentData&);
@@ -39,7 +47,7 @@ struct UserAgentData {
   std::string bitness;
 };
 
-struct NavigatorConfig {
+struct CLAWSER_EXPORT NavigatorConfig {
   NavigatorConfig();
   NavigatorConfig(const NavigatorConfig&);
   NavigatorConfig& operator=(const NavigatorConfig&);
@@ -70,7 +78,7 @@ struct ScreenConfig {
   double device_pixel_ratio = 1.0;
 };
 
-struct WebGlParams {
+struct CLAWSER_EXPORT WebGlParams {
   WebGlParams();
   WebGlParams(const WebGlParams&);
   WebGlParams& operator=(const WebGlParams&);
@@ -90,7 +98,7 @@ struct WebGlParams {
   std::vector<std::string> extensions;
 };
 
-struct GpuConfig {
+struct CLAWSER_EXPORT GpuConfig {
   GpuConfig();
   GpuConfig(const GpuConfig&);
   GpuConfig& operator=(const GpuConfig&);
@@ -116,7 +124,7 @@ struct MediaDevicesConfig {
   int video_inputs = 1;
 };
 
-struct SpeechVoice {
+struct CLAWSER_EXPORT SpeechVoice {
   SpeechVoice();
   SpeechVoice(const SpeechVoice&);
   SpeechVoice& operator=(const SpeechVoice&);
@@ -134,7 +142,7 @@ enum class WebRtcPolicy {
   kSpoofed,
 };
 
-struct WebRtcConfig {
+struct CLAWSER_EXPORT WebRtcConfig {
   WebRtcConfig();
   WebRtcConfig(const WebRtcConfig&);
   WebRtcConfig& operator=(const WebRtcConfig&);
@@ -150,7 +158,7 @@ struct BatteryConfig {
   bool enabled = false;
 };
 
-struct ClawserConfig {
+struct CLAWSER_EXPORT ClawserConfig {
   ClawserConfig();
   ClawserConfig(const ClawserConfig&);
   ClawserConfig& operator=(const ClawserConfig&);
@@ -175,19 +183,18 @@ struct ClawserConfig {
   bool usb_enabled = false;
 };
 
-class ClawserConfigManager {
+class CLAWSER_EXPORT ClawserConfigManager {
  public:
   static ClawserConfigManager& GetInstance();
 
   bool LoadFromFile(const std::string& path);
+  bool ParseJson(const std::string& json_content);
   bool IsLoaded() const;
   const ClawserConfig& GetConfig() const;
 
  private:
   ClawserConfigManager();
   ~ClawserConfigManager();
-
-  bool ParseJson(const std::string& json_content);
   bool ParseNavigator(const base::Value::Dict& dict);
   bool ParseScreen(const base::Value::Dict& dict);
   bool ParseGpu(const base::Value::Dict& dict);
@@ -195,7 +202,7 @@ class ClawserConfigManager {
   bool ParseMediaDevices(const base::Value::Dict& dict);
   bool ParseWebRtc(const base::Value::Dict& dict);
 
-  bool loaded_ = false;
+  std::atomic<bool> loaded_{false};
   ClawserConfig config_;
 };
 

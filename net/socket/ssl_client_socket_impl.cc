@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "base/containers/span.h"
+#include "clawser/clawser_config.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -734,22 +735,10 @@ int SSLClientSocketImpl::Init() {
   SSL_clear_mode(ssl_.get(), mode.clear_mask);
 
   {
-    static base::NoDestructor<std::string> s_cipher_base([] {
-      std::vector<std::string> cipher_groups = {
-          "ECDHE+AESGCM",
-          "ECDHE+CHACHA20",
-          "ECDHE+AES",
-      };
-      base::RandomShuffle(cipher_groups.begin(), cipher_groups.end());
-      std::string result;
-      for (size_t i = 0; i < cipher_groups.size(); ++i) {
-        if (i > 0)
-          result.append(":");
-        result.append(cipher_groups[i]);
-      }
-      return result;
-    }());
-    std::string command = *s_cipher_base;
+    // Use Chrome's exact cipher preference order to match its JA3
+    // fingerprint. Previously shuffled, but JA3 scanners could detect
+    // non-Chrome orderings. This matches real Chrome 131+.
+    std::string command = "ECDHE+AESGCM:ECDHE+CHACHA20:ECDHE+AES";
     command.append(":!aPSK:!ECDSA+SHA1:!3DES");
 
     if (ssl_config_.require_ecdhe)
@@ -773,7 +762,20 @@ int SSLClientSocketImpl::Init() {
   // TODO(crbug.com/boringssl/699): Once the default is flipped in BoringSSL, we
   // no longer need to override it.
   {
-    static base::NoDestructor<std::vector<uint16_t>> s_verify_prefs([] {
+    // Signature algorithm order: seed-driven when clawser is loaded.
+    auto seed_shuffle = [](auto& vec, uint64_t& seed) {
+      for (size_t i = vec.size() - 1; i > 0; --i) {
+        seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+        size_t j = seed % (i + 1);
+        std::swap(vec[i], vec[j]);
+      }
+    };
+
+    std::vector<uint16_t> verify_prefs;
+    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+      uint64_t seed =
+          clawser::ClawserConfigManager::GetInstance().GetConfig()
+              .noise_seeds.webgl;  // Reuse webgl seed for sig order.
       std::vector<uint16_t> sha256 = {
           SSL_SIGN_ECDSA_SECP256R1_SHA256,
           SSL_SIGN_RSA_PSS_RSAE_SHA256,
@@ -788,17 +790,41 @@ int SSLClientSocketImpl::Init() {
           SSL_SIGN_RSA_PSS_RSAE_SHA512,
           SSL_SIGN_RSA_PKCS1_SHA512,
       };
-      base::RandomShuffle(sha256.begin(), sha256.end());
-      base::RandomShuffle(sha384.begin(), sha384.end());
-      base::RandomShuffle(sha512.begin(), sha512.end());
-      std::vector<uint16_t> result;
-      result.insert(result.end(), sha256.begin(), sha256.end());
-      result.insert(result.end(), sha384.begin(), sha384.end());
-      result.insert(result.end(), sha512.begin(), sha512.end());
-      return result;
-    }());
-    if (!SSL_set_verify_algorithm_prefs(ssl_.get(), s_verify_prefs->data(),
-                                        s_verify_prefs->size())) {
+      seed_shuffle(sha256, seed);
+      seed_shuffle(sha384, seed);
+      seed_shuffle(sha512, seed);
+      verify_prefs.insert(verify_prefs.end(), sha256.begin(), sha256.end());
+      verify_prefs.insert(verify_prefs.end(), sha384.begin(), sha384.end());
+      verify_prefs.insert(verify_prefs.end(), sha512.begin(), sha512.end());
+    } else {
+      static base::NoDestructor<std::vector<uint16_t>> s_verify_prefs([] {
+        std::vector<uint16_t> sha256 = {
+            SSL_SIGN_ECDSA_SECP256R1_SHA256,
+            SSL_SIGN_RSA_PSS_RSAE_SHA256,
+            SSL_SIGN_RSA_PKCS1_SHA256,
+        };
+        std::vector<uint16_t> sha384 = {
+            SSL_SIGN_ECDSA_SECP384R1_SHA384,
+            SSL_SIGN_RSA_PSS_RSAE_SHA384,
+            SSL_SIGN_RSA_PKCS1_SHA384,
+        };
+        std::vector<uint16_t> sha512 = {
+            SSL_SIGN_RSA_PSS_RSAE_SHA512,
+            SSL_SIGN_RSA_PKCS1_SHA512,
+        };
+        base::RandomShuffle(sha256.begin(), sha256.end());
+        base::RandomShuffle(sha384.begin(), sha384.end());
+        base::RandomShuffle(sha512.begin(), sha512.end());
+        std::vector<uint16_t> result;
+        result.insert(result.end(), sha256.begin(), sha256.end());
+        result.insert(result.end(), sha384.begin(), sha384.end());
+        result.insert(result.end(), sha512.begin(), sha512.end());
+        return result;
+      }());
+      verify_prefs = *s_verify_prefs;
+    }
+    if (!SSL_set_verify_algorithm_prefs(ssl_.get(), verify_prefs.data(),
+                                        verify_prefs.size())) {
       return ERR_UNEXPECTED;
     }
   }

@@ -162,7 +162,7 @@ ClawserConfigManager::ClawserConfigManager() = default;
 ClawserConfigManager::~ClawserConfigManager() = default;
 
 bool ClawserConfigManager::IsLoaded() const {
-  return loaded_;
+  return loaded_.load(std::memory_order_acquire);
 }
 
 const ClawserConfig& ClawserConfigManager::GetConfig() const {
@@ -302,7 +302,7 @@ bool ClawserConfigManager::ParseJson(const std::string& json_content) {
     LOG(INFO) << "Clawser randomized hardware: " << hw.gl_renderer;
   }
 
-  loaded_ = true;
+  loaded_.store(true, std::memory_order_release);
   LOG(INFO) << "Clawser config loaded for profile: " << config_.profile_id;
   return true;
 }

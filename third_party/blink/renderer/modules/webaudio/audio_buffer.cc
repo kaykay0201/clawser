@@ -230,10 +230,17 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
             .GetConfig()
             .noise_seeds.audio;
     if (audio_seed != 0) {
-      DOMFloat32Array* channel_array = channels_[channel_index].Get();
-      clawser::ApplyAudioNoise(
-          static_cast<float*>(channel_array->Data()),
-          channel_array->length(), audio_seed ^ (channel_index + 1));
+      // Apply noise only once per channel to avoid accumulation on
+      // repeated getChannelData() calls (detectable fingerprint tell).
+      if (noise_applied_.size() < channels_.size())
+        noise_applied_.resize(channels_.size(), false);
+      if (!noise_applied_[channel_index]) {
+        DOMFloat32Array* channel_array = channels_[channel_index].Get();
+        clawser::ApplyAudioNoise(
+            static_cast<float*>(channel_array->Data()),
+            channel_array->length(), audio_seed ^ (channel_index + 1));
+        noise_applied_[channel_index] = true;
+      }
     }
   }
 

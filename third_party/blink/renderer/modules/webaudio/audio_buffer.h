@@ -126,6 +126,9 @@ class MODULES_EXPORT AudioBuffer final : public ScriptWrappable {
   uint32_t length_;
 
   HeapVector<Member<DOMFloat32Array>> channels_;
+
+  // Track which channels have had audio noise applied (once per channel).
+  Vector<bool> noise_applied_;
 };
 
 // Shared data that audio threads can hold onto.

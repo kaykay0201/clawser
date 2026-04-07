@@ -208,26 +208,13 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
     headers->insert({spdy::kHttp2MethodHeader, info.method});
     headers->insert({spdy::kHttp2AuthorityHeader, GetHostAndPort(info.url)});
   } else if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    static const int s_h2_pseudo_order = base::RandGenerator(3);
-    std::string authority = GetHostAndOptionalPort(info.url);
-    std::string scheme = info.url.scheme();
-    std::string path = info.url.PathForRequest();
-    if (s_h2_pseudo_order == 0) {
-      headers->insert({spdy::kHttp2MethodHeader, info.method});
-      headers->insert({spdy::kHttp2AuthorityHeader, authority});
-      headers->insert({spdy::kHttp2SchemeHeader, scheme});
-      headers->insert({spdy::kHttp2PathHeader, path});
-    } else if (s_h2_pseudo_order == 1) {
-      headers->insert({spdy::kHttp2MethodHeader, info.method});
-      headers->insert({spdy::kHttp2PathHeader, path});
-      headers->insert({spdy::kHttp2AuthorityHeader, authority});
-      headers->insert({spdy::kHttp2SchemeHeader, scheme});
-    } else {
-      headers->insert({spdy::kHttp2MethodHeader, info.method});
-      headers->insert({spdy::kHttp2SchemeHeader, scheme});
-      headers->insert({spdy::kHttp2AuthorityHeader, authority});
-      headers->insert({spdy::kHttp2PathHeader, path});
-    }
+    // Real Chrome ordering: :method :authority :scheme :path
+    // Using only this variant to match Chrome's JA3H fingerprint exactly.
+    headers->insert({spdy::kHttp2MethodHeader, info.method});
+    headers->insert(
+        {spdy::kHttp2AuthorityHeader, GetHostAndOptionalPort(info.url)});
+    headers->insert({spdy::kHttp2SchemeHeader, info.url.scheme()});
+    headers->insert({spdy::kHttp2PathHeader, info.url.PathForRequest()});
   } else {
     headers->insert({spdy::kHttp2MethodHeader, info.method});
     headers->insert(

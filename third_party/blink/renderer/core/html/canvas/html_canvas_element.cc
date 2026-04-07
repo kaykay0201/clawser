@@ -1285,6 +1285,9 @@ String HTMLCanvasElement::ToDataURLInternal(
                 if (!data_buffer)
                   return String("data:,");
               }
+            } else {
+              LOG(WARNING) << "Clawser: canvas readPixels failed in "
+                           << "toDataURL — noise not applied";
             }
           }
         }
@@ -1426,6 +1429,9 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
                 image_bitmap =
                     UnacceleratedStaticBitmapImage::Create(noised_image);
               }
+            } else {
+              LOG(WARNING) << "Clawser: canvas readPixels failed in "
+                           << "toBlob — noise not applied";
             }
           }
         }

@@ -545,8 +545,9 @@ void RenderThreadImpl::Init() {
   {
     const base::CommandLine& cmd =
         *base::CommandLine::ForCurrentProcess();
-    if (cmd.HasSwitch("clawser-config")) {
-      std::string config_path = cmd.GetSwitchValueASCII("clawser-config");
+    if (cmd.HasSwitch(clawser::kClawserConfigSwitch)) {
+      std::string config_path =
+          cmd.GetSwitchValueASCII(clawser::kClawserConfigSwitch);
       clawser::ClawserConfigManager::GetInstance().LoadFromFile(config_path);
     }
   }

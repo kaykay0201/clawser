@@ -12,6 +12,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -165,6 +166,9 @@ class BrowserController {
     base::Value::Dict capture_data;
   };
   std::vector<std::unique_ptr<PendingWait>> pending_waits_;
+
+  // Must be last member.
+  base::WeakPtrFactory<BrowserController> weak_factory_{this};
 };
 
 }  // namespace clawser::browser
