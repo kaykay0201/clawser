@@ -34,6 +34,11 @@ class CdpClient : public content::DevToolsAgentHostClient {
       base::RepeatingCallback<void(std::string endpoint,
                                    base::Value::Dict data)>;
 
+  // Fired when a response arrives for a captured endpoint.
+  using ResponseCallback =
+      base::RepeatingCallback<void(std::string endpoint,
+                                   base::Value::Dict response)>;
+
   CdpClient();
   ~CdpClient() override;
 
@@ -119,10 +124,6 @@ class CdpClient : public content::DevToolsAgentHostClient {
   };
   std::map<std::string, CaptureState> captures_;
 
-  // Response callback — fired when __clawser_response__ arrives.
-  using ResponseCallback =
-      base::RepeatingCallback<void(std::string endpoint,
-                                   base::Value::Dict response)>;
   ResponseCallback response_callback_;
 
   // Isolated world context ID (0 = not yet created).

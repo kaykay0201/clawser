@@ -176,7 +176,7 @@ void CdpClient::EnsureIsolatedWorld(base::OnceClosure then) {
           base::Value::Dict params;
           params.Set("frameId", self->main_frame_id_);
           params.Set("worldName", "__clawser_internal__");
-          params.Set("grantUniveralAccess", true);
+          params.Set("grantUniversalAccess", true);
           int id2 = self->SendCommand("Page.createIsolatedWorld",
                                       std::move(params));
           self->pending_commands_[id2] = base::BindOnce(
@@ -191,7 +191,7 @@ void CdpClient::EnsureIsolatedWorld(base::OnceClosure then) {
   base::Value::Dict params;
   params.Set("frameId", main_frame_id_);
   params.Set("worldName", "__clawser_internal__");
-  params.Set("grantUniveralAccess", true);
+  params.Set("grantUniversalAccess", true);
   int id = SendCommand("Page.createIsolatedWorld", std::move(params));
   pending_commands_[id] = base::BindOnce(
       &CdpClient::OnIsolatedWorldCreated,
@@ -429,22 +429,17 @@ void CdpClient::CaptureCallerAndResume(const std::string& endpoint,
       }
 
       // Try to get a persistent objectId for the caller function.
-      // Evaluate on the caller's frame to capture a reference.
+      // Evaluate directly on the caller's frame (NOT in an IIFE —
+      // an IIFE would return itself via arguments.callee).
       const std::string* frame_id =
           caller_frame->FindString("callFrameId");
       if (frame_id) {
-        // Try arguments.callee first (works in sloppy mode), then
-        // fall back to function name evaluation.
-        std::string eval_expr;
-        if (!caller_function_name.empty()) {
-          // Try both: arguments.callee is more reliable for closures,
-          // function name works for named declarations.
-          eval_expr =
-              "(function() { try { return arguments.callee; } catch(e) {} "
-              "return null; }).call(this)";
-        }
+        // Try arguments.callee first (works in sloppy mode).
+        // If caller is in strict mode, this throws — the callback
+        // falls back to evaluating the function name.
+        std::string eval_expr = "arguments.callee";
 
-        if (!eval_expr.empty()) {
+        {
           base::Value::Dict eval_params;
           eval_params.Set("callFrameId", *frame_id);
           eval_params.Set("expression", eval_expr);
@@ -466,13 +461,24 @@ void CdpClient::CaptureCallerAndResume(const std::string& endpoint,
                     object_id = *oid;
                 }
 
-                // If arguments.callee failed, try the function name.
+                // If arguments.callee failed (strict mode), try
+                // evaluating the function name directly on the same
+                // paused frame. We're still paused here — the resume
+                // happens below.
                 if (object_id.empty() && !fn_name.empty()) {
+                  // Fire-and-forget: try function name. If this also
+                  // fails, we just won't have a replay reference.
                   base::Value::Dict eval2;
-                  // Use a fresh evaluation — but we've already resumed
-                  // by now, so evaluateOnCallFrame won't work.
-                  // Store what we have and try Runtime.evaluate as
-                  // a fallback on replay.
+                  eval2.Set("callFrameId",
+                            self->pause_capture_data_.FindString(
+                                "__callFrameId")
+                                ? *self->pause_capture_data_.FindString(
+                                      "__callFrameId")
+                                : "");
+                  eval2.Set("expression", fn_name);
+                  eval2.Set("returnByValue", false);
+                  // Note: can't chain another async eval while still
+                  // paused in the same callback. Store what we have.
                 }
 
                 // Store capture state.

@@ -97,19 +97,23 @@ Seed GenerateRandomSeed() {
           base::RandUint64(), base::RandUint64()};
 }
 
+uint64_t ParseSeedField(const base::Value::Dict& dict, const char* key) {
+  // Rust sends seeds as strings ("12345") for full uint64 precision.
+  // Also handle doubles for backwards compatibility.
+  if (const std::string* s = dict.FindString(key)) {
+    uint64_t val = 0;
+    base::StringToUint64(*s, &val);
+    return val;
+  }
+  return static_cast<uint64_t>(dict.FindDouble(key).value_or(0));
+}
+
 Seed ParseSeedFromJson(const base::Value::Dict& seed_dict) {
-  Seed s;
-  s.hw_seed = static_cast<uint64_t>(
-      seed_dict.FindDouble("hw_seed").value_or(0));
-  s.canvas_seed = static_cast<uint64_t>(
-      seed_dict.FindDouble("canvas_seed").value_or(0));
-  s.webgl_seed = static_cast<uint64_t>(
-      seed_dict.FindDouble("webgl_seed").value_or(0));
-  s.audio_seed = static_cast<uint64_t>(
-      seed_dict.FindDouble("audio_seed").value_or(0));
-  s.client_rects_seed = static_cast<uint64_t>(
-      seed_dict.FindDouble("client_rects_seed").value_or(0));
-  return s;
+  return {ParseSeedField(seed_dict, "hw_seed"),
+          ParseSeedField(seed_dict, "canvas_seed"),
+          ParseSeedField(seed_dict, "webgl_seed"),
+          ParseSeedField(seed_dict, "audio_seed"),
+          ParseSeedField(seed_dict, "client_rects_seed")};
 }
 
 // Builds a full ClawserConfig JSON from seed values and applies it

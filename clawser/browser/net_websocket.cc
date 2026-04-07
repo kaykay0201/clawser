@@ -99,13 +99,14 @@ void NetWebSocket::Recv(uint32_t timeout_ms,
     return;
   }
 
-  // Register a waiter.
+  // Register a waiter with its pointer captured in the timeout callback.
   auto waiter = std::make_unique<RecvWaiter>();
   waiter->callback = std::move(cb);
   RecvWaiter* raw = waiter.get();
   waiter->timeout.Start(
       FROM_HERE, base::Milliseconds(timeout_ms),
-      base::BindOnce(&NetWebSocket::OnRecvTimeout, base::Unretained(this)));
+      base::BindOnce(&NetWebSocket::OnRecvTimeout,
+                     base::Unretained(this), raw));
   recv_waiters_.push_back(std::move(waiter));
 }
 
@@ -242,12 +243,12 @@ void NetWebSocket::TryDeliverMessage() {
   }
 }
 
-void NetWebSocket::OnRecvTimeout() {
-  // Find and resolve the timed-out waiter.
+void NetWebSocket::OnRecvTimeout(RecvWaiter* target) {
   for (auto it = recv_waiters_.begin(); it != recv_waiters_.end(); ++it) {
-    if (!(*it)->timeout.IsRunning()) {
+    if (it->get() == target) {
       auto waiter = std::move(*it);
       recv_waiters_.erase(it);
+      waiter->timeout.Stop();
       std::move(waiter->callback).Run("");
       return;
     }

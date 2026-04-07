@@ -11,7 +11,6 @@ executable("clawser_browser") {
     "message_handler.h",
     "net_websocket.cc",
     "net_websocket.h",
-    "watch_registry.h",
   ]
 
   deps = [

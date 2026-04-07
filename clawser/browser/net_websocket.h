@@ -72,7 +72,7 @@ class NetWebSocket : public network::mojom::WebSocketHandshakeClient,
   // Data pipe read handling.
   void OnReadable(MojoResult result, const mojo::HandleSignalsState& state);
   void TryDeliverMessage();
-  void OnRecvTimeout();
+  void OnRecvTimeout(RecvWaiter* target);
 
   mojo::Remote<network::mojom::WebSocket> socket_;
   mojo::Receiver<network::mojom::WebSocketClient> client_receiver_{this};

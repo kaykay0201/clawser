@@ -10,7 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "clawser/browser/cdp_client.h"
 #include "clawser/browser/net_websocket.h"
-#include "clawser/browser/watch_registry.h"
+#include "base/command_line.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -80,9 +80,17 @@ void BrowserController::ExecuteJS(const std::string& page_id,
 
 std::string BrowserController::AddWatch(const std::string& endpoint) {
   watch_endpoints_.push_back(endpoint);
-  // Also register in the process-global registry so the renderer's
-  // BuildHookScript() can pick it up (single-process mode shares memory).
-  GetWatchRegistry().push_back(endpoint);
+  // Update the command line so the renderer's BuildHookScript() picks up
+  // watches. CommandLine::AppendSwitchASCII uses map semantics (overwrites),
+  // so this is safe to call repeatedly. Cross-DLL safe in component builds.
+  std::string joined;
+  for (size_t i = 0; i < watch_endpoints_.size(); ++i) {
+    if (i > 0)
+      joined += ",";
+    joined += watch_endpoints_[i];
+  }
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      "clawser-watch", joined);
 
   std::string watch_id = base::StringPrintf("w%d", next_watch_id_++);
   watch_id_to_endpoint_[watch_id] = endpoint;
@@ -154,20 +162,30 @@ base::Value::Dict* BrowserController::GetLastCapture(
 
 void BrowserController::OnCaptureReceived(std::string endpoint,
                                           base::Value::Dict data) {
-  // Find the watch_id for this endpoint.
   auto wid_it = endpoint_to_watch_id_.find(endpoint);
   if (wid_it == endpoint_to_watch_id_.end())
     return;
 
-  // Resolve the first pending wait that matches.
-  for (auto it = pending_waits_.begin(); it != pending_waits_.end(); ++it) {
-    if ((*it)->watch_id == wid_it->second) {
-      auto waiter = std::move(*it);
-      pending_waits_.erase(it);
-      waiter->timeout.Stop();
-      std::move(waiter->callback).Run(/*timed_out=*/false, std::move(data));
-      return;
+  // Find the first pending wait that matches.
+  for (auto& waiter : pending_waits_) {
+    if (waiter->watch_id != wid_it->second)
+      continue;
+
+    const std::string* type = data.FindString("type");
+    bool is_websocket = type && *type == "websocket";
+
+    if (is_websocket) {
+      // WebSocket captures resolve immediately (no response to wait for).
+      auto owned = std::move(waiter);
+      std::erase_if(pending_waits_, [](const auto& w) { return !w; });
+      owned->timeout.Stop();
+      std::move(owned->callback).Run(/*timed_out=*/false, std::move(data));
+    } else {
+      // HTTP captures: store data, wait for __clawser_response__.
+      waiter->capture_received = true;
+      waiter->capture_data = std::move(data);
     }
+    return;
   }
 }
 
@@ -176,7 +194,14 @@ void BrowserController::OnWaitTimeout(PendingWait* waiter) {
     if (it->get() == waiter) {
       auto owned = std::move(*it);
       pending_waits_.erase(it);
-      std::move(owned->callback).Run(/*timed_out=*/true, base::Value::Dict());
+      if (owned->capture_received) {
+        // Got capture but response never arrived — return capture-only.
+        std::move(owned->callback)
+            .Run(/*timed_out=*/false, std::move(owned->capture_data));
+      } else {
+        std::move(owned->callback)
+            .Run(/*timed_out=*/true, base::Value::Dict());
+      }
       return;
     }
   }
@@ -207,8 +232,23 @@ content::StoragePartition* BrowserController::GetStoragePartition() {
 
 void BrowserController::OnResponseReceived(std::string endpoint,
                                            base::Value::Dict response) {
-  // Response data is stored in CdpClient's CaptureState.
-  // Pending waits that need response will check it.
+  auto wid_it = endpoint_to_watch_id_.find(endpoint);
+  if (wid_it == endpoint_to_watch_id_.end())
+    return;
+
+  // Find a pending wait that already has capture data for this endpoint.
+  for (auto it = pending_waits_.begin(); it != pending_waits_.end(); ++it) {
+    if ((*it)->watch_id == wid_it->second && (*it)->capture_received) {
+      auto waiter = std::move(*it);
+      pending_waits_.erase(it);
+      waiter->timeout.Stop();
+      // Merge response into capture data.
+      waiter->capture_data.Set("response", std::move(response));
+      std::move(waiter->callback)
+          .Run(/*timed_out=*/false, std::move(waiter->capture_data));
+      return;
+    }
+  }
 }
 
 // --- WebSocket (C++ Mojo network stack) ---
@@ -331,8 +371,16 @@ void BrowserController::FetchRequest(
   if (timeout_ms > 0)
     loader->SetTimeoutDuration(base::Milliseconds(timeout_ms));
 
-  if (body && !body->empty())
-    loader->AttachStringForUpload(*body, "application/octet-stream");
+  if (body && !body->empty()) {
+    // Use Content-Type from request headers if provided.
+    std::string content_type = "application/octet-stream";
+    if (headers) {
+      const std::string* ct = headers->FindString("Content-Type");
+      if (!ct) ct = headers->FindString("content-type");
+      if (ct) content_type = *ct;
+    }
+    loader->AttachStringForUpload(*body, content_type);
+  }
 
   auto* loader_ptr = loader.get();
   pending_loaders_.push_back(std::move(loader));

@@ -156,11 +156,13 @@ class BrowserController {
   // CDP client for capture + replay.
   std::unique_ptr<CdpClient> cdp_client_;
 
-  // Pending async waits.
+  // Pending async waits. For HTTP watches, waits for both capture + response.
   struct PendingWait {
     std::string watch_id;
     base::OneShotTimer timeout;
     WaitCallback callback;
+    bool capture_received = false;
+    base::Value::Dict capture_data;
   };
   std::vector<std::unique_ptr<PendingWait>> pending_waits_;
 };

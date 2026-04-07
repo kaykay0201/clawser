@@ -10,7 +10,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "clawser/browser/chrome_object_setup.h"
-#include "clawser/browser/watch_registry.h"
 #include "clawser/clawser_config.h"
 #include "v8/include/v8-context.h"
 #include "v8/include/v8-script.h"
@@ -63,23 +62,18 @@ void ClawserWatcherObserver::InjectWatcherHooks(
 }
 
 std::string ClawserWatcherObserver::BuildHookScript() {
-  // Read watch endpoints from the process-global registry (set by
-  // BrowserController::AddWatch) and fall back to the --clawser-watch
-  // command-line switch (set by chrome --clawser-config mode).
-  std::vector<std::string> endpoints = GetWatchRegistry();
-
-  if (endpoints.empty()) {
-    const base::CommandLine& cmd =
-        *base::CommandLine::ForCurrentProcess();
-    std::string watch_str = cmd.GetSwitchValueASCII("clawser-watch");
-    if (watch_str.empty())
-      return "";
-    endpoints = base::SplitString(
-        watch_str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  }
-
-  if (endpoints.empty())
+  // Read watch endpoints from --clawser-watch command line switch.
+  // Set by BrowserController::AddWatch (which uses AppendSwitchASCII,
+  // map semantics = overwrites), or by chrome --clawser-config mode.
+  // Cross-DLL safe: CommandLine::ForCurrentProcess() is process-global.
+  const base::CommandLine& cmd =
+      *base::CommandLine::ForCurrentProcess();
+  std::string watch_str = cmd.GetSwitchValueASCII("clawser-watch");
+  if (watch_str.empty())
     return "";
+
+  std::vector<std::string> endpoints = base::SplitString(
+      watch_str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
   std::string endpoints_json = "[";
   for (size_t i = 0; i < endpoints.size(); ++i) {
@@ -217,6 +211,7 @@ std::string ClawserWatcherObserver::BuildHookScript() {
     }
     return ws;
   };
+  window.WebSocket.toString = function() { return 'function WebSocket() { [native code] }'; };
   window.WebSocket.CONNECTING = _WS.CONNECTING;
   window.WebSocket.OPEN = _WS.OPEN;
   window.WebSocket.CLOSING = _WS.CLOSING;
