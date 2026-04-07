@@ -375,25 +375,10 @@ void OfflineAudioContext::FireCompletionEvent() {
       return;
     }
 
-    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-      uint64_t audio_seed =
-          clawser::ClawserConfigManager::GetInstance()
-              .GetConfig()
-              .noise_seeds.audio;
-      if (audio_seed != 0) {
-        for (unsigned ch = 0; ch < rendered_buffer->numberOfChannels(); ++ch) {
-          NotShared<DOMFloat32Array> channel_data =
-              rendered_buffer->getChannelData(ch);
-          if (channel_data) {
-            clawser::ApplyAudioNoise(
-                static_cast<float*>(channel_data->Data()),
-                channel_data->length(),
-                audio_seed ^
-                    (static_cast<uint64_t>(ch) + 0x0FF11EADD10C000ULL));
-          }
-        }
-      }
-    }
+    // Audio noise is applied lazily in AudioBuffer::getChannelData() via
+    // the noise_applied_ per-channel flag. No need to apply here — the
+    // consumer will get noised data on first read. Applying here would
+    // double-noise since getChannelData() also applies it.
 
     DispatchEvent(*OfflineAudioCompletionEvent::Create(rendered_buffer));
     complete_resolver_->Resolve(rendered_buffer);

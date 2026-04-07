@@ -236,6 +236,11 @@ void NetWebSocket::TryDeliverMessage() {
     std::string msg = std::move(pending_message_);
     pending_message_.clear();
 
+    // Acknowledge flow control — allows the network service to send more.
+    // Without this, high-throughput connections stall after the window fills.
+    if (socket_.is_bound())
+      socket_->StartReceiving();
+
     // Deliver to a waiter or buffer it.
     if (!recv_waiters_.empty()) {
       auto waiter = std::move(recv_waiters_.front());
