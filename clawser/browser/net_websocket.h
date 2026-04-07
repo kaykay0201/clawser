@@ -22,15 +22,15 @@ namespace clawser::browser {
 // C++ WebSocket client using Chromium's network service (Mojo).
 // Uses the same TLS/H2 stack as the browser — fully antidetect.
 // All methods must be called on the UI thread.
-class NetWebSocket : public network::mojom::WebSocketHandshakeClient,
-                     public network::mojom::WebSocketClient {
+class NetWebSocket : public ::network::mojom::WebSocketHandshakeClient,
+                     public ::network::mojom::WebSocketClient {
  public:
   NetWebSocket();
   ~NetWebSocket() override;
 
   // Connect to a WebSocket URL via the network service.
   void Connect(const GURL& url,
-               network::mojom::NetworkContext* network_context,
+               ::network::mojom::NetworkContext* network_context,
                const url::Origin& origin,
                base::OnceCallback<void(bool ok)> cb);
 
@@ -47,22 +47,30 @@ class NetWebSocket : public network::mojom::WebSocketHandshakeClient,
   bool is_connected() const { return connected_; }
 
  private:
+  struct RecvWaiter {
+    RecvWaiter();
+    ~RecvWaiter();
+    base::OnceCallback<void(std::string)> callback;
+    base::OneShotTimer timeout;
+  };
+
   // WebSocketHandshakeClient
   void OnOpeningHandshakeStarted(
-      network::mojom::WebSocketHandshakeRequestPtr request) override;
+      ::network::mojom::WebSocketHandshakeRequestPtr request) override;
   void OnFailure(const std::string& message,
                  int32_t net_error,
                  int32_t response_code) override;
   void OnConnectionEstablished(
-      mojo::PendingRemote<network::mojom::WebSocket> socket,
-      mojo::PendingReceiver<network::mojom::WebSocketClient> client_receiver,
-      network::mojom::WebSocketHandshakeResponsePtr response,
+      mojo::PendingRemote<::network::mojom::WebSocket> socket,
+      mojo::PendingReceiver<::network::mojom::WebSocketClient>
+          client_receiver,
+      ::network::mojom::WebSocketHandshakeResponsePtr response,
       mojo::ScopedDataPipeConsumerHandle readable,
       mojo::ScopedDataPipeProducerHandle writable) override;
 
   // WebSocketClient
   void OnDataFrame(bool fin,
-                   network::mojom::WebSocketMessageType type,
+                   ::network::mojom::WebSocketMessageType type,
                    uint64_t data_length) override;
   void OnDropChannel(bool was_clean,
                      uint16_t code,
@@ -74,9 +82,9 @@ class NetWebSocket : public network::mojom::WebSocketHandshakeClient,
   void TryDeliverMessage();
   void OnRecvTimeout(RecvWaiter* target);
 
-  mojo::Remote<network::mojom::WebSocket> socket_;
-  mojo::Receiver<network::mojom::WebSocketClient> client_receiver_{this};
-  mojo::Receiver<network::mojom::WebSocketHandshakeClient>
+  mojo::Remote<::network::mojom::WebSocket> socket_;
+  mojo::Receiver<::network::mojom::WebSocketClient> client_receiver_{this};
+  mojo::Receiver<::network::mojom::WebSocketHandshakeClient>
       handshake_receiver_{this};
 
   mojo::ScopedDataPipeConsumerHandle readable_;
@@ -94,10 +102,6 @@ class NetWebSocket : public network::mojom::WebSocketHandshakeClient,
   std::vector<std::string> recv_buffer_;
 
   // Pending recv waiters.
-  struct RecvWaiter {
-    base::OnceCallback<void(std::string)> callback;
-    base::OneShotTimer timeout;
-  };
   std::vector<std::unique_ptr<RecvWaiter>> recv_waiters_;
 
   base::OnceCallback<void(bool)> connect_callback_;

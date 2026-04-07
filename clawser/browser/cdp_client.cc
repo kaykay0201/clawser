@@ -19,6 +19,15 @@ CdpClient::~CdpClient() {
   Detach();
 }
 
+CdpClient::CaptureState::CaptureState() = default;
+CdpClient::CaptureState::~CaptureState() = default;
+CdpClient::CaptureState::CaptureState(CaptureState&&) = default;
+CdpClient::CaptureState& CdpClient::CaptureState::operator=(CaptureState&&) = default;
+
+bool CdpClient::IsTrusted() {
+  return true;
+}
+
 void CdpClient::AttachToPage(content::WebContents* wc) {
   // Detach from previous page if any.
   Detach();

@@ -15,7 +15,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
-#include "services/network/public/cpp/simple_url_loader.h"
+
+namespace network {
+class SimpleURLLoader;
+}  // namespace network
 
 namespace headless {
 class HeadlessBrowser;
@@ -24,15 +27,11 @@ class HeadlessWebContents;
 }  // namespace headless
 
 namespace content {
+class StoragePartition;
 class WebContents;
-}
+}  // namespace content
 
 namespace clawser::browser {
-
-namespace network::mojom {
-class CookieManager;
-class NetworkContext;
-}  // namespace network::mojom
 
 class CdpClient;
 class NetWebSocket;
@@ -159,6 +158,8 @@ class BrowserController {
 
   // Pending async waits. For HTTP watches, waits for both capture + response.
   struct PendingWait {
+    PendingWait();
+    ~PendingWait();
     std::string watch_id;
     base::OneShotTimer timeout;
     WaitCallback callback;

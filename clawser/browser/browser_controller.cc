@@ -31,6 +31,9 @@
 
 namespace clawser::browser {
 
+BrowserController::PendingWait::PendingWait() = default;
+BrowserController::PendingWait::~PendingWait() = default;
+
 BrowserController::BrowserController(
     headless::HeadlessBrowser* browser,
     headless::HeadlessBrowserContext* context)

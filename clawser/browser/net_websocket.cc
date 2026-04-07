@@ -30,6 +30,9 @@ net::NetworkTrafficAnnotationTag GetTrafficAnnotation() {
 
 }  // namespace
 
+NetWebSocket::RecvWaiter::RecvWaiter() = default;
+NetWebSocket::RecvWaiter::~RecvWaiter() = default;
+
 NetWebSocket::NetWebSocket()
     : read_watcher_(FROM_HERE,
                     mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC) {}
@@ -164,6 +167,7 @@ void NetWebSocket::OnConnectionEstablished(
   read_watcher_.Watch(
       readable_.get(),
       MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+      MOJO_WATCH_CONDITION_SATISFIED,
       base::BindRepeating(&NetWebSocket::OnReadable,
                           base::Unretained(this)));
 

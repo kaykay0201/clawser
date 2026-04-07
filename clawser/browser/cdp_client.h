@@ -81,7 +81,7 @@ class CdpClient : public content::DevToolsAgentHostClient {
       content::DevToolsAgentHost* agent_host,
       base::span<const uint8_t> message) override;
   void AgentHostClosed(content::DevToolsAgentHost* agent_host) override;
-  bool IsTrusted() override { return true; }
+  bool IsTrusted() override;
 
  private:
   // Send a CDP command, returns the command id.
@@ -116,6 +116,11 @@ class CdpClient : public content::DevToolsAgentHostClient {
 
   // Per-endpoint capture state.
   struct CaptureState {
+    CaptureState();
+    ~CaptureState();
+    CaptureState(CaptureState&&);
+    CaptureState& operator=(CaptureState&&);
+
     base::Value::Dict last_capture;
     base::Value::Dict last_response;  // from __clawser_response__
     bool has_response = false;
