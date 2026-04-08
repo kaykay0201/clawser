@@ -122,7 +122,7 @@ impl Browser {
     /// Send a command and read the response.
     fn command(&self, cmd: &str, params: serde_json::Value) -> io::Result<serde_json::Value> {
         let mut stdin = self.stdin.lock().map_err(|_| io::Error::other("stdin lock poisoned"))?;
-        let id = protocol::send_command(&mut stdin, cmd, params)?;
+        let _id = protocol::send_command(&mut stdin, cmd, params)?;
         drop(stdin);
         let mut stdout = self.stdout.lock().map_err(|_| io::Error::other("stdout lock poisoned"))?;
         protocol::read_response(&mut stdout)

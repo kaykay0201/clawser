@@ -317,11 +317,19 @@ void ChildProcessMain(content::ContentMainParams params) {
 
 int main(int argc, const char** argv) {
 #if BUILDFLAG(IS_WIN)
-  // Save the raw stdout handle BEFORE anything can modify it.
+  // DuplicateHandle the raw stdout BEFORE anything can modify it.
   // ContentMain calls RouteStdioToConsole which does freopen("CONOUT$", stdout)
-  // when --headless is set, destroying our pipe handle. By saving it here,
-  // we can bypass CRT entirely with WriteFile.
-  clawser::browser::g_raw_stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+  // when --headless is set. freopen internally CloseHandle()s the original
+  // pipe handle, which would invalidate a simple GetStdHandle() copy.
+  // DuplicateHandle creates an independent OS handle that survives freopen.
+  {
+    HANDLE original = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (original != INVALID_HANDLE_VALUE) {
+      DuplicateHandle(GetCurrentProcess(), original, GetCurrentProcess(),
+                      &clawser::browser::g_raw_stdout, 0, FALSE,
+                      DUPLICATE_SAME_ACCESS);
+    }
+  }
 #endif
 
   // Disable stdout buffering for JSON line protocol
