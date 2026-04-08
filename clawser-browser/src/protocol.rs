@@ -1,87 +1,79 @@
-use serde_json::Value;
-use std::io::{self, BufRead, Write};
+use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use futures_util::{SinkExt, StreamExt};
+use serde_json::Value;
+use tokio::net::TcpStream;
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Send a JSON command to the browser process via TCP.
-pub(crate) fn send_command(
-    writer: &mut impl Write,
-    cmd: &str,
-    params: Value,
-) -> io::Result<u64> {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let msg = match params {
-        Value::Object(mut map) => {
-            map.insert("id".to_string(), Value::from(id));
-            map.insert("cmd".to_string(), Value::from(cmd));
-            Value::Object(map)
-        }
-        _ => {
-            let mut map = serde_json::Map::new();
-            map.insert("id".to_string(), Value::from(id));
-            map.insert("cmd".to_string(), Value::from(cmd));
-            Value::Object(map)
-        }
-    };
+pub(crate) type CdpSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-    let line = serde_json::to_string(&msg).map_err(|e| io::Error::other(e))?;
-    writeln!(writer, "{}", line)?;
-    writer.flush()?;
+/// Connect to a CDP WebSocket endpoint.
+pub(crate) async fn connect_cdp(ws_url: &str) -> io::Result<CdpSocket> {
+    let (socket, _) = connect_async(ws_url)
+        .await
+        .map_err(|e| io::Error::other(format!("CDP WebSocket connect failed: {}", e)))?;
+    Ok(socket)
+}
+
+/// Send a CDP method and return the message id.
+pub(crate) async fn send_cdp(ws: &mut CdpSocket, method: &str, params: Value) -> io::Result<u64> {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let msg = serde_json::json!({
+        "id": id,
+        "method": method,
+        "params": params,
+    });
+    let text = serde_json::to_string(&msg)
+        .map_err(|e| io::Error::other(format!("serialize failed: {}", e)))?;
+    ws.send(Message::Text(text.into()))
+        .await
+        .map_err(|e| io::Error::other(format!("ws send failed: {}", e)))?;
     Ok(id)
 }
 
-/// Wait for the ready signal from the browser process.
-pub(crate) fn read_ready(
-    reader: &mut impl BufRead,
-) -> io::Result<Value> {
-    let mut line = String::new();
-    let bytes_read = reader.read_line(&mut line)?;
-    if bytes_read == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "browser closed connection before ready signal",
-        ));
-    }
+/// Read CDP responses until we get one matching the given id.
+pub(crate) async fn recv_cdp(ws: &mut CdpSocket, expected_id: u64) -> io::Result<Value> {
+    loop {
+        let msg = ws
+            .next()
+            .await
+            .ok_or_else(|| io::Error::new(io::ErrorKind::ConnectionAborted, "CDP WebSocket closed"))?
+            .map_err(|e| io::Error::other(format!("ws read failed: {}", e)))?;
 
-    let parsed: Value =
-        serde_json::from_str(line.trim()).map_err(|e| io::Error::other(e))?;
-
-    if !parsed.get("ready").and_then(|v| v.as_bool()).unwrap_or(false) {
-        return Err(io::Error::other(format!(
-            "expected ready signal, got: {}",
-            line.trim()
-        )));
-    }
-
-    Ok(parsed)
-}
-
-/// Read a JSON response line. Blocks until a line is available.
-pub(crate) fn read_response(
-    reader: &mut impl BufRead,
-) -> io::Result<Value> {
-    let mut line = String::new();
-    let bytes_read = reader.read_line(&mut line)?;
-    if bytes_read == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "browser closed connection",
-        ));
-    }
-
-    let parsed: Value =
-        serde_json::from_str(line.trim()).map_err(|e| io::Error::other(e))?;
-
-    if let Some(ok) = parsed.get("ok") {
-        if !ok.as_bool().unwrap_or(false) {
-            let error_msg = parsed
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown error");
-            return Err(io::Error::other(format!("browser error: {}", error_msg)));
+        match msg {
+            Message::Text(text) => {
+                let parsed: Value = serde_json::from_str(&text)
+                    .map_err(|e| io::Error::other(format!("parse failed: {}", e)))?;
+                if let Some(id) = parsed.get("id").and_then(|v| v.as_u64()) {
+                    if id == expected_id {
+                        if let Some(err) = parsed.get("error") {
+                            let msg = err
+                                .get("message")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown CDP error");
+                            return Err(io::Error::other(format!("CDP error: {}", msg)));
+                        }
+                        return Ok(parsed);
+                    }
+                }
+                // Event — ignore, keep reading
+            }
+            Message::Close(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::ConnectionAborted,
+                    "CDP WebSocket closed",
+                ));
+            }
+            _ => {} // ping/pong/binary
         }
     }
+}
 
-    Ok(parsed)
+/// Send a CDP method and wait for the response.
+pub(crate) async fn call_cdp(ws: &mut CdpSocket, method: &str, params: Value) -> io::Result<Value> {
+    let id = send_cdp(ws, method, params).await?;
+    recv_cdp(ws, id).await
 }

@@ -1,56 +1,67 @@
-//! Smoke test for clawser-browser.
+//! Smoke test: headless + headful antidetect via chrome.exe + CDP.
 //!
-//! Tests: init → navigate → js eval → shutdown.
-//! Run with: CLAWSER_BROWSER_PATH=out/Default/clawser_browser.exe cargo run --example smoke_test
+//! Run: CLAWSER_CHROME_PATH=out/Default/chrome.exe cargo run --manifest-path clawser-browser/Cargo.toml --example smoke_test
 
 use clawser_browser::Browser;
 use std::time::Instant;
 
-fn main() {
-    println!("=== clawser-browser smoke test ===\n");
+async fn test_antidetect(page: &clawser_browser::Page<'_>, label: &str) {
+    println!("\n  --- {} antidetect checks ---", label);
+    let checks: &[(&str, &str)] = &[
+        ("UA", "navigator.userAgent"),
+        ("Platform", "navigator.platform"),
+        ("Languages", "JSON.stringify(navigator.languages)"),
+        ("Cores", "navigator.hardwareConcurrency.toString()"),
+        ("webdriver", "navigator.webdriver.toString()"),
+        ("Screen", "screen.width + 'x' + screen.height"),
+        ("Timezone", "Intl.DateTimeFormat().resolvedOptions().timeZone"),
+        ("chrome", "typeof window.chrome"),
+        ("cdc_", "(function(){for(var k in window){if(/^cdc_/.test(k))return 'YES'}return 'NO'})()"),
+    ];
+    for (name, code) in checks {
+        match page.js(code).await {
+            Ok(val) => println!("    {}: {}", name, val),
+            Err(e) => println!("    {}: ERROR - {}", name, e),
+        }
+    }
+}
 
-    // 1. Create browser with random profile
-    println!("[1/5] Creating browser...");
+#[tokio::main]
+async fn main() {
+    let config = std::env::var("CLAWSER_CONFIG").unwrap_or_else(|_| {
+        if let Ok(chrome) = std::env::var("CLAWSER_CHROME_PATH") {
+            let dir = std::path::Path::new(&chrome).parent().unwrap_or(std::path::Path::new("."));
+            let cfg = dir.join("test_profile.json");
+            if cfg.exists() { return cfg.to_string_lossy().to_string(); }
+        }
+        "out/Default/test_profile.json".to_string()
+    });
+
+    println!("=== clawser-browser smoke test (async) ===\n");
+
+    // HEADLESS
+    println!("[1] Creating HEADLESS browser...");
     let start = Instant::now();
-    let (browser, seed) = Browser::new().expect("Failed to create browser");
-    println!("  OK in {:?}", start.elapsed());
-    println!("  Seed: hw={} canvas={} webgl={} audio={} rects={}",
-        seed.hw_seed, seed.canvas_seed, seed.webgl_seed,
-        seed.audio_seed, seed.client_rects_seed);
+    let browser = Browser::builder().headless().config(&config).build().await
+        .expect("Failed to create headless browser");
+    println!("    OK in {:?}", start.elapsed());
 
-    // 2. Navigate to about:blank (safe, no network needed)
-    println!("\n[2/5] Navigating to about:blank...");
+    let page = browser.navigate("about:blank").await.expect("navigate failed");
+    let result = page.js("1 + 1").await.expect("js failed");
+    assert!(result.contains("2"));
+    test_antidetect(&page, "HEADLESS").await;
+    browser.shutdown().await.expect("shutdown failed");
+
+    // HEADFUL
+    println!("\n[2] Creating HEADFUL browser...");
     let start = Instant::now();
-    let page = browser.navigate("about:blank").expect("Failed to navigate");
-    println!("  OK in {:?}", start.elapsed());
+    let browser = Browser::builder().headful().config(&config).build().await
+        .expect("Failed to create headful browser");
+    println!("    OK in {:?}", start.elapsed());
 
-    // 3. Execute JS
-    println!("\n[3/5] Executing JS: 1 + 1...");
-    let start = Instant::now();
-    let result = page.js("1 + 1").expect("Failed to execute JS");
-    println!("  Result: {}", result);
-    println!("  OK in {:?}", start.elapsed());
-    assert!(result.contains("2"), "Expected '2', got '{}'", result);
-
-    // 4. Check antidetect spoofing
-    println!("\n[4/5] Checking antidetect...");
-    let platform = page.js("navigator.platform").expect("JS failed");
-    println!("  navigator.platform = {}", platform);
-
-    let webdriver = page.js("navigator.webdriver").expect("JS failed");
-    println!("  navigator.webdriver = {}", webdriver);
-
-    let chrome_exists = page.js("typeof window.chrome").expect("JS failed");
-    println!("  typeof window.chrome = {}", chrome_exists);
-
-    let pointer = page.js("matchMedia('(pointer: fine)').matches").expect("JS failed");
-    println!("  (pointer: fine) = {}", pointer);
-
-    // 5. Shutdown
-    println!("\n[5/5] Shutting down...");
-    let start = Instant::now();
-    browser.shutdown().expect("Failed to shutdown");
-    println!("  OK in {:?}", start.elapsed());
+    let page = browser.navigate("about:blank").await.expect("navigate failed");
+    test_antidetect(&page, "HEADFUL").await;
+    browser.shutdown().await.expect("shutdown failed");
 
     println!("\n=== ALL TESTS PASSED ===");
 }

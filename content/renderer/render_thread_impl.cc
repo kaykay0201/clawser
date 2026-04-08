@@ -20,6 +20,10 @@
 #include <vector>
 
 #include "clawser/clawser_config.h"
+#include "clawser/timezone_spoof.h"
+
+#include "third_party/icu/source/common/unicode/unistr.h"
+#include "third_party/icu/source/i18n/unicode/timezone.h"
 
 #include "base/allocator/partition_alloc_support.h"
 #include "base/at_exit.h"
@@ -549,6 +553,18 @@ void RenderThreadImpl::Init() {
       std::string config_path =
           cmd.GetSwitchValueASCII(clawser::kClawserConfigSwitch);
       clawser::ClawserConfigManager::GetInstance().LoadFromFile(config_path);
+      // ICU was initialized before config was loaded, so re-apply timezone now.
+      std::string tz = clawser::GetSpoofedTimezone();
+      if (!tz.empty()) {
+        icu::UnicodeString icu_tz =
+            icu::UnicodeString::fromUTF8(icu::StringPiece(tz));
+        icu::TimeZone* zone = icu::TimeZone::createTimeZone(icu_tz);
+        if (zone && *zone != icu::TimeZone::getUnknown()) {
+          icu::TimeZone::adoptDefault(zone);
+        } else {
+          delete zone;
+        }
+      }
     }
   }
 

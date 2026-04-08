@@ -111,6 +111,9 @@
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "clawser/clawser_config.h"
+#include "clawser/timezone_spoof.h"
+#include "third_party/icu/source/common/unicode/unistr.h"
+#include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/logging_chrome.h"
@@ -1512,6 +1515,18 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
       if (clawser::ClawserConfigManager::GetInstance().LoadFromFile(
               config_path)) {
         LOG(INFO) << "Clawser config loaded successfully from: " << config_path;
+        // ICU was initialized before config was loaded, so re-apply timezone.
+        std::string tz = clawser::GetSpoofedTimezone();
+        if (!tz.empty()) {
+          icu::UnicodeString icu_tz =
+              icu::UnicodeString::fromUTF8(icu::StringPiece(tz));
+          icu::TimeZone* zone = icu::TimeZone::createTimeZone(icu_tz);
+          if (zone && *zone != icu::TimeZone::getUnknown()) {
+            icu::TimeZone::adoptDefault(zone);
+          } else {
+            delete zone;
+          }
+        }
       } else {
         LOG(ERROR) << "Failed to load clawser config from: " << config_path;
       }

@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/frame/navigator_language.h"
 
+#include "clawser/clawser_config.h"
 #include "services/network/public/cpp/features.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -69,13 +70,17 @@ void NavigatorLanguage::EnsureUpdatedLanguage() {
       languages_ = ParseAndSanitize(GetAcceptLanguages());
       // Reduce the Accept-Language if the ReduceAcceptLanguage deprecation
       // trial is not enabled and feature flag ReduceAcceptLanguage is enabled.
-      if (RuntimeEnabledFeatures::DisableReduceAcceptLanguageEnabled(
-              execution_context_)) {
-        UseCounter::Count(execution_context_,
-                          WebFeature::kDisableReduceAcceptLanguage);
-      } else if (base::FeatureList::IsEnabled(
-                     network::features::kReduceAcceptLanguage)) {
-        languages_ = Vector<String>({languages_.front()});
+      // Skip reduction when clawser config is loaded — the config specifies
+      // the exact language list to expose.
+      if (!clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+        if (RuntimeEnabledFeatures::DisableReduceAcceptLanguageEnabled(
+                execution_context_)) {
+          UseCounter::Count(execution_context_,
+                            WebFeature::kDisableReduceAcceptLanguage);
+        } else if (base::FeatureList::IsEnabled(
+                       network::features::kReduceAcceptLanguage)) {
+          languages_ = Vector<String>({languages_.front()});
+        }
       }
     }
 
