@@ -52,6 +52,24 @@ CLAWSER_FETCH_EXPORT ClawserSession* clawser_session_create(
 CLAWSER_FETCH_EXPORT const char* clawser_session_get_cookies(
     ClawserSession* session);
 
+// Set a cookie. Format: "name=value; domain=.example.com; path=/; secure; httponly"
+// Or JSON: {"name":"x","value":"y","domain":".example.com","path":"/","secure":true,"httponly":false}
+// Returns 0 on success, negative on error.
+CLAWSER_FETCH_EXPORT int clawser_session_set_cookie(
+    ClawserSession* session,
+    const char* url,
+    const char* cookie_json);
+
+// Import cookies from a JSON array string (same format as get_cookies output).
+// Returns number of cookies imported, or negative on error.
+CLAWSER_FETCH_EXPORT int clawser_session_import_cookies(
+    ClawserSession* session,
+    const char* cookies_json);
+
+// Clear all cookies.
+CLAWSER_FETCH_EXPORT void clawser_session_clear_cookies(
+    ClawserSession* session);
+
 CLAWSER_FETCH_EXPORT void clawser_session_destroy(ClawserSession* session);
 
 // Thread-local error string, valid until next call from same thread.

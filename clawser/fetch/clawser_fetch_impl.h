@@ -55,6 +55,9 @@ class FetchSession {
   // Does not consume the request — safe to call before Send().
   net::HttpRequestHeaders PrepareHeaders(const FetchRequest& request);
   std::string GetAllCookiesJson();
+  bool SetCookie(const std::string& url, const std::string& cookie_line);
+  int ImportCookiesJson(const std::string& json);
+  void ClearCookies();
 
   const net::HttpRequestHeaders& default_headers() const {
     return default_headers_;

@@ -5,6 +5,8 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_pump_type.h"
@@ -529,6 +531,112 @@ std::string FetchSession::GetAllCookiesJson() {
   return result;
 }
 
+bool FetchSession::SetCookie(const std::string& url,
+                             const std::string& cookie_line) {
+  bool result = false;
+  base::WaitableEvent done;
+
+  io_thread_.task_runner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](net::URLRequestContext* context, const std::string& url,
+             const std::string& cookie_line, bool* result,
+             base::WaitableEvent* done) {
+            auto cookie = net::CanonicalCookie::CreateForTesting(
+                GURL(url), cookie_line, base::Time::Now());
+            if (!cookie) {
+              // Try parsing as JSON: {"name":"x","value":"y","domain":"..."}
+              auto parsed = base::JSONReader::ReadAndReturnValueWithError(
+                  cookie_line);
+              if (parsed.has_value() && parsed->is_dict()) {
+                auto& d = parsed->GetDict();
+                const std::string* name = d.FindString("name");
+                const std::string* value = d.FindString("value");
+                const std::string* domain = d.FindString("domain");
+                const std::string* path = d.FindString("path");
+                bool secure = d.FindBool("secure").value_or(false);
+                bool httponly = d.FindBool("httponly").value_or(false);
+                if (name && value && domain) {
+                  cookie = net::CanonicalCookie::CreateUnsafeCookieForTesting(
+                      *name, *value, *domain,
+                      path ? *path : "/",
+                      base::Time(), base::Time(), base::Time(),
+                      base::Time(), secure, httponly,
+                      net::CookieSameSite::NO_RESTRICTION,
+                      net::CookiePriority::COOKIE_PRIORITY_DEFAULT);
+                }
+              }
+            }
+            if (!cookie) {
+              *result = false;
+              done->Signal();
+              return;
+            }
+            context->cookie_store()->SetCanonicalCookieAsync(
+                std::move(cookie), GURL(url),
+                net::CookieOptions::MakeAllInclusive(),
+                base::BindOnce(
+                    [](bool* result, base::WaitableEvent* done,
+                       net::CookieAccessResult access_result) {
+                      *result = access_result.status.IsInclude();
+                      done->Signal();
+                    },
+                    result, done));
+          },
+          base::Unretained(context_.get()), url, cookie_line, &result,
+          &done));
+
+  done.Wait();
+  return result;
+}
+
+int FetchSession::ImportCookiesJson(const std::string& json) {
+  auto parsed = base::JSONReader::ReadAndReturnValueWithError(json);
+  if (!parsed.has_value() || !parsed->is_list())
+    return -1;
+
+  int count = 0;
+  for (const auto& item : parsed->GetList()) {
+    if (!item.is_dict())
+      continue;
+    const auto& d = item.GetDict();
+    const std::string* name = d.FindString("name");
+    const std::string* value = d.FindString("value");
+    const std::string* domain = d.FindString("domain");
+    if (!name || !value || !domain)
+      continue;
+
+    // Build URL from domain for cookie setting.
+    std::string url_str = "https://";
+    if (!domain->empty() && (*domain)[0] == '.')
+      url_str += domain->substr(1);
+    else
+      url_str += *domain;
+    url_str += "/";
+
+    std::string item_json;
+    base::JSONWriter::Write(item, &item_json);
+    if (SetCookie(url_str, item_json))
+      count++;
+  }
+  return count;
+}
+
+void FetchSession::ClearCookies() {
+  base::WaitableEvent done;
+  io_thread_.task_runner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](net::URLRequestContext* context, base::WaitableEvent* done) {
+            context->cookie_store()->DeleteAllAsync(
+                base::BindOnce([](base::WaitableEvent* done,
+                                  uint32_t) { done->Signal(); },
+                               done));
+          },
+          base::Unretained(context_.get()), &done));
+  done.Wait();
+}
+
 // --- BlockingFetchDelegate ---
 
 BlockingFetchDelegate::BlockingFetchDelegate()
@@ -671,6 +779,29 @@ const char* clawser_session_get_cookies(ClawserSession* session) {
       reinterpret_cast<clawser::fetch::FetchSession*>(session)
           ->GetAllCookiesJson();
   return cookies_json.c_str();
+}
+
+int clawser_session_set_cookie(ClawserSession* session,
+                               const char* url,
+                               const char* cookie_json) {
+  if (!session || !url || !cookie_json)
+    return -1;
+  bool ok = reinterpret_cast<clawser::fetch::FetchSession*>(session)
+                ->SetCookie(url, cookie_json);
+  return ok ? 0 : -1;
+}
+
+int clawser_session_import_cookies(ClawserSession* session,
+                                   const char* cookies_json) {
+  if (!session || !cookies_json)
+    return -1;
+  return reinterpret_cast<clawser::fetch::FetchSession*>(session)
+      ->ImportCookiesJson(cookies_json);
+}
+
+void clawser_session_clear_cookies(ClawserSession* session) {
+  if (session)
+    reinterpret_cast<clawser::fetch::FetchSession*>(session)->ClearCookies();
 }
 
 void clawser_session_destroy(ClawserSession* session) {
