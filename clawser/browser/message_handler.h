@@ -10,38 +10,46 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/synchronization/lock.h"
-#include "base/threading/thread.h"
 #include "base/values.h"
+#include "net/base/io_buffer.h"
+#include "net/socket/stream_socket.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace clawser::browser {
 
 class BrowserController;
 
-// Reads JSON commands from stdin, dispatches to BrowserController,
-// writes JSON responses to stdout. All command dispatch happens on
-// the browser UI thread.
+// Reads JSON commands from a TCP socket, dispatches to BrowserController,
+// writes JSON responses back. All command dispatch happens on the browser
+// UI thread.
 class MessageHandler {
  public:
   explicit MessageHandler(BrowserController* controller);
   ~MessageHandler();
 
-  // Starts the stdin read loop on a dedicated thread.
-  // Must be called from the UI thread after browser is initialized.
-  void StartStdinLoop();
+  // Start the TCP command loop. Takes ownership of the connected socket.
+  void StartTcpLoop(std::unique_ptr<net::StreamSocket> socket);
 
  private:
-  // Runs on the stdin reader thread — blocking reads.
-  void StdinReadLoop();
+  // Kick off an async read on the TCP socket.
+  void ReadMore();
+  void OnReadComplete(int result);
 
-  // Runs on the UI thread — dispatches a single JSON command.
+  // Process complete lines from the read buffer.
+  void ProcessLines();
+
+  // Dispatch a single JSON command (runs on UI thread).
   void HandleMessage(std::string json_line);
 
-  // Writes a JSON response to stdout. Thread-safe.
+  // Write a JSON response to the TCP socket.
+  void TcpWrite(const std::string& data);
+  void OnWriteComplete(int result);
+
+  // Reply helpers.
   void Reply(int id, base::Value::Dict result);
   void ReplyError(int id, const std::string& error);
 
-  // Command handlers
+  // Command handlers.
   void HandleNavigate(int id, const base::Value::Dict& params);
   void HandleWatch(int id, const base::Value::Dict& params);
   void HandleWait(int id, const base::Value::Dict& params);
@@ -57,8 +65,11 @@ class MessageHandler {
   void HandleShutdown(int id);
 
   raw_ptr<BrowserController> controller_;
-  base::Thread stdin_thread_;
-  base::Lock stdout_lock_;
+
+  // TCP socket for JSON protocol.
+  std::unique_ptr<net::StreamSocket> socket_;
+  scoped_refptr<net::IOBufferWithSize> read_buf_;
+  std::string line_buffer_;  // Accumulates partial reads until newline.
 
   base::WeakPtrFactory<MessageHandler> weak_factory_{this};
 };

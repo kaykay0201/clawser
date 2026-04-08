@@ -36,8 +36,9 @@ pub mod types;
 
 pub use types::{CapturedCall, Cookie, Response, Seed, WsEvent};
 
-use std::io::{self, Write};
-use std::process::{Child, ChildStdin, ChildStdout};
+use std::io::{self, BufReader, Write};
+use std::net::TcpStream;
+use std::process::Child;
 use std::sync::Mutex;
 
 /// Builder for creating a browser instance.
@@ -50,8 +51,8 @@ pub struct BrowserBuilder {
 /// A browser instance = 1 process = 1 antidetect profile.
 pub struct Browser {
     child: Child,
-    stdin: Mutex<ChildStdin>,
-    stdout: Mutex<std::io::BufReader<ChildStdout>>,
+    writer: Mutex<TcpStream>,
+    reader: Mutex<BufReader<TcpStream>>,
 }
 
 /// A loaded page within the browser.
@@ -126,12 +127,12 @@ impl BrowserBuilder {
 
     /// Spawn the browser process and wait for it to be ready.
     pub fn build(self) -> io::Result<(Browser, Seed)> {
-        let (child, stdin, stdout, seed) =
+        let (child, reader, writer, seed) =
             process::spawn_browser(self.headless, self.seed.as_ref(), &self.watch)?;
         let browser = Browser {
             child,
-            stdin: Mutex::new(stdin),
-            stdout: Mutex::new(stdout),
+            writer: Mutex::new(writer),
+            reader: Mutex::new(reader),
         };
         Ok((browser, seed))
     }
@@ -156,11 +157,11 @@ impl Browser {
 
     /// Send a command and read the response.
     fn command(&self, cmd: &str, params: serde_json::Value) -> io::Result<serde_json::Value> {
-        let mut stdin = self.stdin.lock().map_err(|_| io::Error::other("stdin lock poisoned"))?;
-        let _id = protocol::send_command(&mut stdin, cmd, params)?;
-        drop(stdin);
-        let mut stdout = self.stdout.lock().map_err(|_| io::Error::other("stdout lock poisoned"))?;
-        protocol::read_response(&mut stdout)
+        let mut writer = self.writer.lock().map_err(|_| io::Error::other("writer lock poisoned"))?;
+        let _id = protocol::send_command(&mut *writer, cmd, params)?;
+        drop(writer);
+        let mut reader = self.reader.lock().map_err(|_| io::Error::other("reader lock poisoned"))?;
+        protocol::read_response(&mut *reader)
     }
 
     /// Navigate to a URL. Returns a Page handle.
@@ -224,9 +225,9 @@ impl Browser {
 
 impl Drop for Browser {
     fn drop(&mut self) {
-        if let Ok(mut stdin) = self.stdin.lock() {
-            let _ = writeln!(stdin, r#"{{"id":0,"cmd":"shutdown"}}"#);
-            let _ = stdin.flush();
+        if let Ok(mut writer) = self.writer.lock() {
+            let _ = writeln!(writer, r#"{{"id":0,"cmd":"shutdown"}}"#);
+            let _ = writer.flush();
         }
         let _ = self.child.wait();
     }

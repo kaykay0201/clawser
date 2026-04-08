@@ -1,13 +1,12 @@
 use serde_json::Value;
-use std::io::{self, BufRead, BufReader, Write};
-use std::process::{ChildStdin, ChildStdout};
+use std::io::{self, BufRead, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Send a JSON command to the browser process via stdin.
+/// Send a JSON command to the browser process via TCP.
 pub(crate) fn send_command(
-    stdin: &mut ChildStdin,
+    writer: &mut impl Write,
     cmd: &str,
     params: Value,
 ) -> io::Result<u64> {
@@ -27,22 +26,21 @@ pub(crate) fn send_command(
     };
 
     let line = serde_json::to_string(&msg).map_err(|e| io::Error::other(e))?;
-    writeln!(stdin, "{}", line)?;
-    stdin.flush()?;
+    writeln!(writer, "{}", line)?;
+    writer.flush()?;
     Ok(id)
 }
 
 /// Wait for the ready signal from the browser process.
-/// The browser writes {"ready":true,"seed":{...}} after full initialization.
 pub(crate) fn read_ready(
-    stdout: &mut BufReader<ChildStdout>,
+    reader: &mut impl BufRead,
 ) -> io::Result<Value> {
     let mut line = String::new();
-    let bytes_read = stdout.read_line(&mut line)?;
+    let bytes_read = reader.read_line(&mut line)?;
     if bytes_read == 0 {
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
-            "browser process closed stdout before ready signal",
+            "browser closed connection before ready signal",
         ));
     }
 
@@ -51,30 +49,30 @@ pub(crate) fn read_ready(
 
     if !parsed.get("ready").and_then(|v| v.as_bool()).unwrap_or(false) {
         return Err(io::Error::other(format!(
-            "expected ready signal, got: {}", line.trim()
+            "expected ready signal, got: {}",
+            line.trim()
         )));
     }
 
     Ok(parsed)
 }
 
-/// Read a JSON response line from stdout. Blocks until a line is available.
+/// Read a JSON response line. Blocks until a line is available.
 pub(crate) fn read_response(
-    stdout: &mut BufReader<ChildStdout>,
+    reader: &mut impl BufRead,
 ) -> io::Result<Value> {
     let mut line = String::new();
-    let bytes_read = stdout.read_line(&mut line)?;
+    let bytes_read = reader.read_line(&mut line)?;
     if bytes_read == 0 {
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
-            "browser process closed stdout",
+            "browser closed connection",
         ));
     }
 
     let parsed: Value =
         serde_json::from_str(line.trim()).map_err(|e| io::Error::other(e))?;
 
-    // Check for error response
     if let Some(ok) = parsed.get("ok") {
         if !ok.as_bool().unwrap_or(false) {
             let error_msg = parsed

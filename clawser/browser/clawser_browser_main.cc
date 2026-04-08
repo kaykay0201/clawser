@@ -2,8 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Entry point for clawser_browser.exe — a headless Chromium browser with
-// antidetect and API payload capture, controlled via stdin/stdout JSON.
+// Entry point for clawser_browser.exe — a headless/headful Chromium browser
+// with antidetect and API payload capture, controlled via TCP JSON protocol.
+//
+// Communication: Rust passes --clawser-port=PORT. The browser binds a TCP
+// listener on 127.0.0.1:PORT, accepts one connection, and runs the JSON
+// line protocol over that socket. No stdin/stdout pipes — avoids Windows
+// CRT heap corruption from piped handles + Chromium's RouteStdioToConsole.
 
 #ifdef UNSAFE_BUFFERS_BUILD
 #pragma allow_unsafe_libc_calls
@@ -15,12 +20,12 @@
 #include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/logging.h"
 #include "base/process/process.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "clawser/browser/browser_controller.h"
 #include "clawser/browser/message_handler.h"
@@ -32,9 +37,16 @@
 #include "headless/lib/headless_content_main_delegate.h"
 #include "headless/public/headless_browser.h"
 #include "headless/public/headless_browser_context.h"
+#include "net/base/io_buffer.h"
+#include "net/base/ip_address.h"
+#include "net/base/ip_endpoint.h"
+#include "net/base/net_errors.h"
+#include "net/log/net_log_source.h"
+#include "net/socket/tcp_server_socket.h"
+#include "net/socket/stream_socket.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 
 #if BUILDFLAG(IS_WIN)
-#include <io.h>
 #include <windows.h>
 #include "content/public/app/sandbox_helper_win.h"
 #include "sandbox/win/src/sandbox_types.h"
@@ -42,42 +54,19 @@
 
 namespace clawser::browser {
 
-// Raw stdout handle saved before ContentMain can modify CRT's stdout.
-// On Windows, ContentMain calls RouteStdioToConsole which can break
-// CRT's fputs/stdout when the process was spawned with piped handles.
-// We bypass CRT entirely and use WriteFile on this saved handle.
-#if BUILDFLAG(IS_WIN)
-static HANDLE g_raw_stdout = INVALID_HANDLE_VALUE;
-#endif
-
-void WriteJsonLine(const std::string& json_with_newline) {
-#if BUILDFLAG(IS_WIN)
-  if (g_raw_stdout != INVALID_HANDLE_VALUE) {
-    DWORD written;
-    WriteFile(g_raw_stdout, json_with_newline.c_str(),
-              static_cast<DWORD>(json_with_newline.size()), &written, nullptr);
-    return;
-  }
-#endif
-  fputs(json_with_newline.c_str(), stdout);
-  fflush(stdout);
-}
-
 namespace {
 
 // Chrome 135 — must match our Chromium branch (6998).
-// The TLS ClientHello is always Chrome 135, so the UA must match.
 constexpr char kChromeVersion[] = "135";
 constexpr char kGreaseBrand[] = "Not-A.Brand";
 constexpr char kGreaseVersion[] = "8";
 
-// Seed struct matching the C API / Rust crate.
 struct Seed {
-  uint64_t hw_seed;
-  uint64_t canvas_seed;
-  uint64_t webgl_seed;
-  uint64_t audio_seed;
-  uint64_t client_rects_seed;
+  uint64_t hw_seed = 0;
+  uint64_t canvas_seed = 0;
+  uint64_t webgl_seed = 0;
+  uint64_t audio_seed = 0;
+  uint64_t client_rects_seed = 0;
 };
 
 Seed GenerateRandomSeed() {
@@ -85,9 +74,6 @@ Seed GenerateRandomSeed() {
           base::RandUint64(), base::RandUint64()};
 }
 
-// Builds a full ClawserConfig JSON from seed values and applies it
-// to the global ClawserConfigManager singleton.
-// Reused logic from clawser/fetch/clawser_fetch_impl.cc ApplySeedToConfig.
 void ApplySeedToConfig(const Seed& seed) {
   const auto& profiles = GetHardwareProfiles();
   size_t hw_idx = seed.hw_seed % profiles.size();
@@ -98,7 +84,6 @@ void ApplySeedToConfig(const Seed& seed) {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/" + v + ".0.0.0 Safari/537.36";
 
-  // Build JSON via base::Value to avoid StringPrintf + PRIu64 issues.
   base::Value::Dict nav_ua_data;
   base::Value::List brands;
   {
@@ -172,8 +157,7 @@ void ApplySeedToConfig(const Seed& seed) {
 
   base::Value::Dict root;
   root.Set("version", 1);
-  root.Set("profile_id",
-           "seed-" + base::NumberToString(seed.hw_seed));
+  root.Set("profile_id", "seed-" + base::NumberToString(seed.hw_seed));
   root.Set("navigator", std::move(nav));
   root.Set("screen", std::move(screen));
   root.Set("gpu", std::move(gpu));
@@ -195,6 +179,7 @@ void ApplySeedToConfig(const Seed& seed) {
 struct StartupState {
   Seed seed;
   std::vector<std::string> watch_endpoints;
+  int port = 0;
 };
 
 StartupState g_startup_state;
@@ -206,22 +191,59 @@ class ClawserBrowserApp {
     LOG(INFO) << "[clawser] Browser started, creating context...";
     browser_ = browser;
 
-    // Create incognito browser context
     auto* context =
         browser_->CreateBrowserContextBuilder().SetIncognitoMode(true).Build();
     browser_->SetDefaultBrowserContext(context);
 
-    // Initialize browser controller and message handler
     controller_ = std::make_unique<BrowserController>(browser_, context);
     handler_ = std::make_unique<MessageHandler>(controller_.get());
 
-    // Register pre-configured watches from --clawser-watch
     for (const auto& endpoint : g_startup_state.watch_endpoints) {
       controller_->AddWatch(endpoint);
     }
 
-    // Send ready signal — browser is fully initialized with antidetect.
-    // Rust waits for this line before sending any commands.
+    // Start TCP listener on the port Rust told us to use.
+    StartTcpListener();
+  }
+
+ private:
+  void StartTcpListener() {
+    server_socket_ = std::make_unique<net::TCPServerSocket>(
+        nullptr, net::NetLogSource());
+    int result = server_socket_->ListenWithAddressAndPort(
+        "127.0.0.1", g_startup_state.port, /*backlog=*/1);
+    if (result != net::OK) {
+      LOG(ERROR) << "[clawser] Failed to listen on port "
+                 << g_startup_state.port << ": " << result;
+      browser_->Shutdown();
+      return;
+    }
+    LOG(INFO) << "[clawser] TCP listening on 127.0.0.1:"
+              << g_startup_state.port;
+
+    // Accept one connection.
+    result = server_socket_->Accept(
+        &client_socket_,
+        base::BindOnce(&ClawserBrowserApp::OnAccepted,
+                       base::Unretained(this)));
+    if (result == net::OK) {
+      OnAccepted(net::OK);
+    }
+    // ERR_IO_PENDING = will call OnAccepted later
+  }
+
+  void OnAccepted(int result) {
+    if (result != net::OK || !client_socket_) {
+      LOG(ERROR) << "[clawser] Accept failed: " << result;
+      browser_->Shutdown();
+      return;
+    }
+    LOG(INFO) << "[clawser] Client connected";
+
+    // Close server socket — only one connection allowed.
+    server_socket_.reset();
+
+    // Send ready signal with seed.
     const auto& s = g_startup_state.seed;
     base::Value::Dict seed_dict;
     seed_dict.Set("hw_seed", base::NumberToString(s.hw_seed));
@@ -238,20 +260,37 @@ class ClawserBrowserApp {
     std::string json;
     base::JSONWriter::Write(ready, &json);
     json += "\n";
-    WriteJsonLine(json);
+    TcpWrite(json);
 
-    // Start stdin read loop on a dedicated thread
-    handler_->StartStdinLoop();
+    // Give the TCP socket to MessageHandler for the JSON command loop.
+    handler_->StartTcpLoop(std::move(client_socket_));
   }
 
- private:
+  void TcpWrite(const std::string& data) {
+    if (!client_socket_)
+      return;
+    auto buf = base::MakeRefCounted<net::StringIOBuffer>(data);
+    net::NetworkTrafficAnnotationTag annotation =
+        net::DefineNetworkTrafficAnnotation("clawser_tcp", R"(
+          semantics { sender: "Clawser Browser" description: "TCP IPC"
+            trigger: "Internal" data: "JSON commands" destination: LOCAL }
+          policy { cookies_allowed: NO })");
+    client_socket_->Write(
+        buf.get(), buf->size(),
+        base::BindOnce([](int result) {
+          if (result < 0)
+            LOG(ERROR) << "[clawser] TCP ready write failed: " << result;
+        }),
+        annotation);
+  }
+
   raw_ptr<headless::HeadlessBrowser> browser_ = nullptr;
   std::unique_ptr<BrowserController> controller_;
   std::unique_ptr<MessageHandler> handler_;
+  std::unique_ptr<net::TCPServerSocket> server_socket_;
+  std::unique_ptr<net::StreamSocket> client_socket_;
 };
 
-// Child process entry — renderer, GPU, utility processes route here.
-// Pattern from headless/app/headless_shell.cc:201-211.
 void ChildProcessMain(content::ContentMainParams params) {
   headless::HeadlessContentMainDelegate delegate(nullptr);
   params.delegate = &delegate;
@@ -264,36 +303,6 @@ void ChildProcessMain(content::ContentMainParams params) {
 }  // namespace clawser::browser
 
 int main(int argc, const char** argv) {
-#if BUILDFLAG(IS_WIN)
-  // Save a duplicate of the stdout pipe handle BEFORE ContentMain modifies it.
-  // RouteStdioToConsole (headless mode) does freopen("CONOUT$", stdout) which
-  // CloseHandle()s the original pipe. DuplicateHandle survives that.
-  //
-  // We also try _get_osfhandle(1) as fallback — on some Windows configs with
-  // STARTF_USESTDHANDLES, GetStdHandle may return the console handle instead
-  // of the piped handle set by the parent process.
-  {
-    HANDLE original = INVALID_HANDLE_VALUE;
-    // Try CRT fd 1 first (most reliable for piped handles).
-    intptr_t fd1 = _get_osfhandle(1);
-    if (fd1 != -1 && fd1 != (intptr_t)INVALID_HANDLE_VALUE) {
-      original = (HANDLE)fd1;
-    }
-    // Fallback to GetStdHandle.
-    if (original == INVALID_HANDLE_VALUE) {
-      original = GetStdHandle(STD_OUTPUT_HANDLE);
-    }
-    if (original != INVALID_HANDLE_VALUE) {
-      DuplicateHandle(GetCurrentProcess(), original, GetCurrentProcess(),
-                      &clawser::browser::g_raw_stdout, 0, FALSE,
-                      DUPLICATE_SAME_ACCESS);
-    }
-  }
-#endif
-
-  // Disable stdout buffering for JSON line protocol
-  setvbuf(stdout, nullptr, _IONBF, 0);
-
   content::ContentMainParams params(nullptr);
 
 #if BUILDFLAG(IS_WIN)
@@ -310,26 +319,32 @@ int main(int argc, const char** argv) {
   base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
 
-  // Child process dispatch — if --type is set, this is a renderer/GPU/etc.
+  // Child process dispatch.
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
   if (!process_type.empty()) {
     clawser::browser::ChildProcessMain(std::move(params));
-    return 0;  // Not reached
+    return 0;
   }
 
-  // Browser process — all config via command line, no stdin before start.
-  //   --clawser-seed=hw,canvas,webgl,audio,rects  (optional, random if omitted)
-  //   --clawser-watch=endpoint1,endpoint2          (optional)
-  //   --headless                                   (optional, default headful)
+  // Browser process.
   LOG(INFO) << "[clawser] Browser process starting...";
 
-  // Parse or generate seed
+  // --clawser-port=PORT (required from Rust, TCP communication)
+  int port = 0;
+  base::StringToInt(
+      command_line.GetSwitchValueASCII("clawser-port"), &port);
+  if (port <= 0) {
+    LOG(ERROR) << "[clawser] --clawser-port is required";
+    return 1;
+  }
+  clawser::browser::g_startup_state.port = port;
+
+  // --clawser-seed=hw,canvas,webgl,audio,rects (optional)
   clawser::browser::Seed seed;
   std::string seed_str =
       command_line.GetSwitchValueASCII("clawser-seed");
   if (!seed_str.empty()) {
-    // Format: "hw,canvas,webgl,audio,rects"
     std::vector<std::string> parts = base::SplitString(
         seed_str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
     if (parts.size() == 5) {
@@ -347,10 +362,9 @@ int main(int argc, const char** argv) {
     seed = clawser::browser::GenerateRandomSeed();
     LOG(INFO) << "[clawser] Generated random seed, hw=" << seed.hw_seed;
   }
-
   clawser::browser::g_startup_state.seed = seed;
 
-  // Parse watch endpoints
+  // --clawser-watch=endpoint1,endpoint2 (optional)
   std::string watch_str =
       command_line.GetSwitchValueASCII("clawser-watch");
   if (!watch_str.empty()) {
@@ -358,21 +372,19 @@ int main(int argc, const char** argv) {
         watch_str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
   }
 
-  // Apply antidetect profile
+  // Apply antidetect profile.
   clawser::browser::ApplySeedToConfig(seed);
 
-  // Core switches — always needed
+  // Core switches.
   command_line.AppendSwitch("single-process");
   command_line.AppendSwitch("no-sandbox");
   command_line.AppendSwitch("disable-gpu");
   command_line.AppendSwitch("clawser-browser");
 
-  // Headless is optional — Rust controls via --headless flag
   if (!command_line.HasSwitch("headless")) {
     LOG(INFO) << "[clawser] Running in headful mode";
   }
 
-  // Create headless browser with our start callback
   clawser::browser::ClawserBrowserApp app;
   auto browser = std::make_unique<headless::HeadlessBrowserImpl>(
       base::BindOnce(&clawser::browser::ClawserBrowserApp::OnBrowserStart,

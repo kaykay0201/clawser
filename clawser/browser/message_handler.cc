@@ -4,57 +4,91 @@
 
 #include "clawser/browser/message_handler.h"
 
-#include <iostream>
-
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/strings/stringprintf.h"
-#include "base/synchronization/lock.h"
-#include "base/task/single_thread_task_runner.h"
 #include "clawser/browser/browser_controller.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace clawser::browser {
 
-// Defined in clawser_browser_main.cc — uses raw WriteFile to bypass CRT
-// stdout issues on Windows when spawned with piped handles.
-void WriteJsonLine(const std::string& json_with_newline);
+namespace {
+constexpr int kReadBufSize = 64 * 1024;
+}
 
 MessageHandler::MessageHandler(BrowserController* controller)
-    : controller_(controller), stdin_thread_("ClawserStdinReader") {}
+    : controller_(controller) {}
 
 MessageHandler::~MessageHandler() {
-  if (stdin_thread_.IsRunning())
-    stdin_thread_.Stop();
+  socket_.reset();
 }
 
-void MessageHandler::StartStdinLoop() {
-  stdin_thread_.Start();
-  stdin_thread_.task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(&MessageHandler::StdinReadLoop, base::Unretained(this)));
+void MessageHandler::StartTcpLoop(
+    std::unique_ptr<net::StreamSocket> socket) {
+  socket_ = std::move(socket);
+  read_buf_ = base::MakeRefCounted<net::IOBufferWithSize>(kReadBufSize);
+  ReadMore();
 }
 
-void MessageHandler::StdinReadLoop() {
-  // NOTE: This runs on the ClawserStdinReader thread, NOT the UI thread.
-  // We must NOT call weak_factory_.GetWeakPtr() here — WeakPtrFactory is
-  // bound to the UI thread. Using base::Unretained is safe because the
-  // destructor calls stdin_thread_.Stop() before destroying |this|.
-  std::string line;
-  while (std::getline(std::cin, line)) {
-    if (line.empty())
-      continue;
-    content::GetUIThreadTaskRunner({})->PostTask(
-        FROM_HERE, base::BindOnce(&MessageHandler::HandleMessage,
-                                  base::Unretained(this), std::move(line)));
+void MessageHandler::ReadMore() {
+  if (!socket_)
+    return;
+  int result = socket_->Read(
+      read_buf_.get(), kReadBufSize,
+      base::BindOnce(&MessageHandler::OnReadComplete,
+                     weak_factory_.GetWeakPtr()));
+  if (result != net::ERR_IO_PENDING)
+    OnReadComplete(result);
+}
+
+void MessageHandler::OnReadComplete(int result) {
+  if (result <= 0) {
+    // 0 = EOF (client disconnected), <0 = error.
+    LOG(INFO) << "[clawser] TCP connection closed (result=" << result << ")";
+    socket_.reset();
+    HandleShutdown(0);
+    return;
   }
-  // stdin closed — parent process died or sent shutdown
-  content::GetUIThreadTaskRunner({})->PostTask(
-      FROM_HERE,
-      base::BindOnce(&MessageHandler::HandleShutdown,
-                     base::Unretained(this), /*id=*/0));
+
+  line_buffer_.append(read_buf_->data(), result);
+  ProcessLines();
+  ReadMore();
+}
+
+void MessageHandler::ProcessLines() {
+  size_t pos;
+  while ((pos = line_buffer_.find('\n')) != std::string::npos) {
+    std::string line = line_buffer_.substr(0, pos);
+    line_buffer_.erase(0, pos + 1);
+    if (!line.empty())
+      HandleMessage(std::move(line));
+  }
+}
+
+void MessageHandler::TcpWrite(const std::string& data) {
+  if (!socket_)
+    return;
+  auto buf = base::MakeRefCounted<net::StringIOBuffer>(data);
+  net::NetworkTrafficAnnotationTag annotation =
+      net::DefineNetworkTrafficAnnotation("clawser_tcp_reply", R"(
+        semantics { sender: "Clawser Browser" description: "TCP IPC reply"
+          trigger: "Internal" data: "JSON response" destination: LOCAL }
+        policy { cookies_allowed: NO })");
+  int result = socket_->Write(
+      buf.get(), buf->size(),
+      base::BindOnce(&MessageHandler::OnWriteComplete,
+                     weak_factory_.GetWeakPtr()),
+      annotation);
+  if (result != net::ERR_IO_PENDING && result < 0) {
+    LOG(ERROR) << "[clawser] TCP write error: " << result;
+  }
+}
+
+void MessageHandler::OnWriteComplete(int result) {
+  if (result < 0) {
+    LOG(ERROR) << "[clawser] TCP write failed: " << result;
+  }
 }
 
 void MessageHandler::HandleMessage(std::string json_line) {
@@ -115,9 +149,7 @@ void MessageHandler::Reply(int id, base::Value::Dict result) {
   std::string json;
   base::JSONWriter::Write(result, &json);
   json += "\n";
-
-  base::AutoLock lock(stdout_lock_);
-  WriteJsonLine(json);
+  TcpWrite(json);
 }
 
 void MessageHandler::ReplyError(int id, const std::string& error) {
@@ -130,9 +162,7 @@ void MessageHandler::ReplyError(int id, const std::string& error) {
   std::string json;
   base::JSONWriter::Write(result, &json);
   json += "\n";
-
-  base::AutoLock lock(stdout_lock_);
-  WriteJsonLine(json);
+  TcpWrite(json);
 }
 
 void MessageHandler::HandleNavigate(int id, const base::Value::Dict& params) {
@@ -315,7 +345,6 @@ void MessageHandler::HandleWebSocket(int id,
     ReplyError(id, "missing 'url' field");
     return;
   }
-  // Default to page p0 if not specified.
   std::string pid = page_id ? *page_id : "p0";
 
   controller_->OpenWebSocket(
