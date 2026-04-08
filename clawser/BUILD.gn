@@ -45,7 +45,6 @@ component("clawser") {
   visibility = [
     "//base:*",
     "//cc:*",
-    "//clawser/browser:*",
     "//clawser/fetch:*",
     "//headless:*",
     "//chrome/browser:*",

@@ -100,7 +100,6 @@ group("gn_all") {
     deps = [
       "//base:base_perftests",
       "//base:base_unittests",
-      "//clawser/browser:clawser_browser",
       "//clawser/fetch:clawser_fetch",
       "//codelabs",
       "//components:components_unittests",

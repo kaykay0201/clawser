@@ -290,10 +290,6 @@ component("headless_non_renderer") {
     "lib/renderer/allowlist.h",
     "lib/renderer/headless_content_renderer_client.cc",
     "lib/renderer/headless_content_renderer_client.h",
-    "//clawser/browser/chrome_object_setup.cc",
-    "//clawser/browser/chrome_object_setup.h",
-    "//clawser/browser/watcher_engine.cc",
-    "//clawser/browser/watcher_engine.h",
     "lib/utility/headless_content_utility_client.cc",
     "lib/utility/headless_content_utility_client.h",
     "public/headless_browser.h",
@@ -356,7 +352,6 @@ component("headless_non_renderer") {
   deps = [
     ":backend_cdp_bindings",
     "//base:base_static",
-    "//clawser",
     "//build:branding_buildflags",
     "//build:chromeos_buildflags",
     "//build/config/linux/dbus:buildflags",

@@ -22,8 +22,6 @@
 #include "headless/lib/renderer/headless_print_render_frame_helper_delegate.h"
 #endif
 
-#include "clawser/browser/watcher_engine.h"
-
 namespace {
 
 class HeadlessContentRendererUrlLoaderThrottleProvider
@@ -109,9 +107,6 @@ void HeadlessContentRendererClient::RenderFrameCreated(
   new printing::PrintRenderFrameHelper(
       render_frame, std::make_unique<HeadlessPrintRenderFrameHelperDelegate>());
 #endif
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch("clawser-browser")) {
-    new clawser::browser::ClawserWatcherObserver(render_frame);
-  }
 }
 
 bool HeadlessContentRendererClient::IsDecoderSupportedVideoType(
