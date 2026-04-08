@@ -762,67 +762,20 @@ int SSLClientSocketImpl::Init() {
   // TODO(crbug.com/boringssl/699): Once the default is flipped in BoringSSL, we
   // no longer need to override it.
   {
-    // Signature algorithm order: seed-driven when clawser is loaded.
-    auto seed_shuffle = [](auto& vec, uint64_t& seed) {
-      for (size_t i = vec.size() - 1; i > 0; --i) {
-        seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
-        size_t j = seed % (i + 1);
-        std::swap(vec[i], vec[j]);
-      }
+    // Chrome's exact signature algorithm order. No shuffle — shuffling
+    // creates JA4 fingerprints that no real Chrome produces, which Akamai
+    // and other TLS fingerprinters can detect.
+    std::vector<uint16_t> verify_prefs = {
+        SSL_SIGN_ECDSA_SECP256R1_SHA256,
+        SSL_SIGN_RSA_PSS_RSAE_SHA256,
+        SSL_SIGN_RSA_PKCS1_SHA256,
+        SSL_SIGN_ECDSA_SECP384R1_SHA384,
+        SSL_SIGN_RSA_PSS_RSAE_SHA384,
+        SSL_SIGN_RSA_PKCS1_SHA384,
+        SSL_SIGN_RSA_PSS_RSAE_SHA512,
+        SSL_SIGN_RSA_PKCS1_SHA512,
     };
 
-    std::vector<uint16_t> verify_prefs;
-    if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-      uint64_t seed =
-          clawser::ClawserConfigManager::GetInstance().GetConfig()
-              .noise_seeds.webgl;  // Reuse webgl seed for sig order.
-      std::vector<uint16_t> sha256 = {
-          SSL_SIGN_ECDSA_SECP256R1_SHA256,
-          SSL_SIGN_RSA_PSS_RSAE_SHA256,
-          SSL_SIGN_RSA_PKCS1_SHA256,
-      };
-      std::vector<uint16_t> sha384 = {
-          SSL_SIGN_ECDSA_SECP384R1_SHA384,
-          SSL_SIGN_RSA_PSS_RSAE_SHA384,
-          SSL_SIGN_RSA_PKCS1_SHA384,
-      };
-      std::vector<uint16_t> sha512 = {
-          SSL_SIGN_RSA_PSS_RSAE_SHA512,
-          SSL_SIGN_RSA_PKCS1_SHA512,
-      };
-      seed_shuffle(sha256, seed);
-      seed_shuffle(sha384, seed);
-      seed_shuffle(sha512, seed);
-      verify_prefs.insert(verify_prefs.end(), sha256.begin(), sha256.end());
-      verify_prefs.insert(verify_prefs.end(), sha384.begin(), sha384.end());
-      verify_prefs.insert(verify_prefs.end(), sha512.begin(), sha512.end());
-    } else {
-      static base::NoDestructor<std::vector<uint16_t>> s_verify_prefs([] {
-        std::vector<uint16_t> sha256 = {
-            SSL_SIGN_ECDSA_SECP256R1_SHA256,
-            SSL_SIGN_RSA_PSS_RSAE_SHA256,
-            SSL_SIGN_RSA_PKCS1_SHA256,
-        };
-        std::vector<uint16_t> sha384 = {
-            SSL_SIGN_ECDSA_SECP384R1_SHA384,
-            SSL_SIGN_RSA_PSS_RSAE_SHA384,
-            SSL_SIGN_RSA_PKCS1_SHA384,
-        };
-        std::vector<uint16_t> sha512 = {
-            SSL_SIGN_RSA_PSS_RSAE_SHA512,
-            SSL_SIGN_RSA_PKCS1_SHA512,
-        };
-        base::RandomShuffle(sha256.begin(), sha256.end());
-        base::RandomShuffle(sha384.begin(), sha384.end());
-        base::RandomShuffle(sha512.begin(), sha512.end());
-        std::vector<uint16_t> result;
-        result.insert(result.end(), sha256.begin(), sha256.end());
-        result.insert(result.end(), sha384.begin(), sha384.end());
-        result.insert(result.end(), sha512.begin(), sha512.end());
-        return result;
-      }());
-      verify_prefs = *s_verify_prefs;
-    }
     if (!SSL_set_verify_algorithm_prefs(ssl_.get(), verify_prefs.data(),
                                         verify_prefs.size())) {
       return ERR_UNEXPECTED;

@@ -76,15 +76,11 @@ struct ChromeVersionInfo {
   const char* grease_version;
 };
 
-// Chrome version → matching GREASE brand for sec-ch-ua.
-// The GREASE brand rotates with each major version.
+// Only Chrome 135 — must match our Chromium branch (6998 = Chrome 135).
+// Claiming older versions creates UA ↔ JA3/JA4 mismatch detectable by
+// Akamai and other TLS fingerprinters.
 constexpr ChromeVersionInfo kChromeVersions[] = {
     {"135", "Not-A.Brand", "8"},
-    {"134", "Not:A-Brand", "24"},
-    {"133", "Not:A-Brand", "24"},
-    {"132", "Not A(Brand", "99"},
-    {"131", "Not/A)Brand", "8"},
-    {"130", "Not?A_Brand", "99"},
 };
 constexpr size_t kNumChromeVersions = std::size(kChromeVersions);
 

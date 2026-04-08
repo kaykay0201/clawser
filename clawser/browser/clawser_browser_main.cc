@@ -73,13 +73,12 @@ struct ChromeVersionInfo {
   const char* grease_version;
 };
 
+// Only claim Chrome 135 — must match our Chromium branch (6998 = Chrome 135).
+// Claiming older versions creates a UA ↔ JA3/JA4 mismatch that Akamai and
+// other TLS fingerprinters detect (the TLS ClientHello is always Chrome 135
+// regardless of what UA string we set).
 constexpr ChromeVersionInfo kChromeVersions[] = {
     {"135", "Not-A.Brand", "8"},
-    {"134", "Not:A-Brand", "24"},
-    {"133", "Not:A-Brand", "24"},
-    {"132", "Not A(Brand", "99"},
-    {"131", "Not/A)Brand", "8"},
-    {"130", "Not?A_Brand", "99"},
 };
 constexpr size_t kNumChromeVersions = std::size(kChromeVersions);
 
