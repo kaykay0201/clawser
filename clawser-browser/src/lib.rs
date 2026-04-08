@@ -1,29 +1,32 @@
 //! # clawser-browser
 //!
-//! Antidetect headless browser with API payload capture.
+//! Antidetect headless/headful browser with API payload capture.
 //!
 //! ## Quick Start
 //!
 //! ```no_run
 //! use clawser_browser::Browser;
 //!
-//! let (browser, seed) = Browser::new()?;
+//! let (browser, seed) = Browser::new()?;  // headless, random profile
 //! let page = browser.navigate("https://target.com")?;
 //!
-//! // Watch HTTP — blocks until endpoint fires, returns closures + response
+//! // Watch HTTP — blocks until endpoint fires
 //! let (re_fetch, gen_payload, resp) = page.watch("/api/v1/setup", 30_000)?;
-//! println!("Captured response: {} {}", resp.status, resp.url);
-//! let fresh = gen_payload.call()?;  // re-invoke JS caller → new payload
-//! let replayed = re_fetch.call()?;  // replay exact HTTP request → new response
-//!
-//! // Watch WebSocket — blocks until WS created, returns closure + URL + connection
-//! let (regen_url, url, ws) = page.watch_websock("/api/lobby", 30_000)?;
-//! println!("Captured WS URL: {}", url);
-//! ws.send("hello")?;
-//! let msg = ws.recv(5000)?;
-//! let new_url = regen_url.call()?;  // re-invoke JS caller → new WS URL
+//! let fresh = gen_payload.call()?;
+//! let replayed = re_fetch.call()?;
 //!
 //! browser.shutdown()?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ## Headful Mode
+//!
+//! ```no_run
+//! use clawser_browser::Browser;
+//!
+//! let (browser, seed) = Browser::builder()
+//!     .headful()
+//!     .build()?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
@@ -33,15 +36,22 @@ pub mod types;
 
 pub use types::{CapturedCall, Cookie, Response, Seed, WsEvent};
 
-use std::io::{self, BufReader, Write};
+use std::io::{self, Write};
 use std::process::{Child, ChildStdin, ChildStdout};
 use std::sync::Mutex;
+
+/// Builder for creating a browser instance.
+pub struct BrowserBuilder {
+    headless: bool,
+    seed: Option<Seed>,
+    watch: Vec<String>,
+}
 
 /// A browser instance = 1 process = 1 antidetect profile.
 pub struct Browser {
     child: Child,
     stdin: Mutex<ChildStdin>,
-    stdout: Mutex<BufReader<ChildStdout>>,
+    stdout: Mutex<std::io::BufReader<ChildStdout>>,
 }
 
 /// A loaded page within the browser.
@@ -82,41 +92,66 @@ pub struct RequestBuilder<'b> {
 }
 
 /// A WebSocket connection via the browser's C++ network stack (Mojo).
-/// Fully antidetect — uses same TLS/H2 fingerprint, zero JS injection.
 pub struct WsConnection<'b> {
     browser: &'b Browser,
     ws_id: String,
 }
 
-impl Browser {
-    /// Create a browser with a random antidetect profile.
-    pub fn new() -> io::Result<(Browser, Seed)> {
-        Self::create(None, &[])
+// --- BrowserBuilder ---
+
+impl BrowserBuilder {
+    /// Run with a visible browser window (default is headless).
+    pub fn headful(mut self) -> Self {
+        self.headless = false;
+        self
     }
 
-    /// Create a browser with a deterministic profile from a seed.
-    pub fn from_seed(seed: &Seed) -> io::Result<Browser> {
-        let (browser, _) = Self::create(Some(seed), &[])?;
-        Ok(browser)
+    /// Run headless (no window). This is the default.
+    pub fn headless(mut self) -> Self {
+        self.headless = true;
+        self
     }
 
-    /// Internal: spawn process, send init, parse seed response.
-    fn create(seed: Option<&Seed>, watch: &[String]) -> io::Result<(Browser, Seed)> {
-        let (child, mut stdin, mut stdout) = process::spawn_browser()?;
-        protocol::send_init(&mut stdin, seed, watch)?;
-        let response = protocol::read_response(&mut stdout)?;
-        let seed_val = response
-            .get("seed")
-            .ok_or_else(|| io::Error::other("init response missing 'seed'"))?;
-        let seed: Seed = serde_json::from_value(seed_val.clone())
-            .map_err(|e| io::Error::other(format!("failed to parse seed: {}", e)))?;
+    /// Use a specific seed for deterministic fingerprint profile.
+    pub fn seed(mut self, seed: Seed) -> Self {
+        self.seed = Some(seed);
+        self
+    }
 
+    /// Pre-register watch endpoints before navigation.
+    pub fn watch(mut self, endpoints: &[&str]) -> Self {
+        self.watch = endpoints.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Spawn the browser process and wait for it to be ready.
+    pub fn build(self) -> io::Result<(Browser, Seed)> {
+        let (child, stdin, stdout, seed) =
+            process::spawn_browser(self.headless, self.seed.as_ref(), &self.watch)?;
         let browser = Browser {
             child,
             stdin: Mutex::new(stdin),
             stdout: Mutex::new(stdout),
         };
         Ok((browser, seed))
+    }
+}
+
+// --- Browser ---
+
+impl Browser {
+    /// Create a headless browser with a random antidetect profile.
+    pub fn new() -> io::Result<(Browser, Seed)> {
+        Self::builder().build()
+    }
+
+    /// Create a builder for fine-grained control.
+    pub fn builder() -> BrowserBuilder {
+        BrowserBuilder {
+            headless: true,
+            seed: None,
+            watch: Vec::new(),
+        }
     }
 
     /// Send a command and read the response.
@@ -214,17 +249,11 @@ impl<'b> Page<'b> {
     }
 
     /// Watch an HTTP endpoint. Blocks until the endpoint fires.
-    ///
-    /// Returns `(re_fetch, generate_payload, response)`:
-    /// - `re_fetch` — replays the exact HTTP request via C++ network stack
-    /// - `generate_payload` — re-invokes the JS caller for a fresh payload
-    /// - `response` — the HTTP response from the original request
     pub fn watch(
         &self,
         endpoint: &str,
         timeout_ms: u32,
     ) -> io::Result<(ReFetch<'b>, GeneratePayload<'b>, Response)> {
-        // Register the watch.
         let watch_resp = self.browser.command(
             "watch",
             serde_json::json!({"endpoint": endpoint}),
@@ -235,7 +264,6 @@ impl<'b> Page<'b> {
             .unwrap_or("w0")
             .to_string();
 
-        // Block until endpoint fires.
         let wait_resp = self.browser.command(
             "wait",
             serde_json::json!({"watch_id": watch_id, "timeout_ms": timeout_ms}),
@@ -246,13 +274,11 @@ impl<'b> Page<'b> {
             .cloned()
             .unwrap_or(serde_json::Value::Null);
 
-        // Extract request params for ReFetch.
         let method = captured.get("method").and_then(|v| v.as_str()).unwrap_or("GET").to_string();
         let url = captured.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let headers = captured.get("headers").cloned().unwrap_or(serde_json::json!({}));
         let body = captured.get("body").and_then(|v| v.as_str()).map(String::from);
 
-        // Extract response (from the response field, populated by hook's .then()).
         let resp_data = captured.get("response").cloned().unwrap_or(serde_json::Value::Null);
         let response = Response {
             status: resp_data.get("status").and_then(|v| v.as_u64()).unwrap_or(0) as u16,
@@ -295,17 +321,11 @@ impl<'b> Page<'b> {
     }
 
     /// Watch a WebSocket endpoint. Blocks until a WS connection is created.
-    ///
-    /// Returns `(regenerate_url, captured_url, ws_connection)`:
-    /// - `regenerate_url` — re-invokes the JS that generated the WS URL
-    /// - `captured_url` — the WebSocket URL (with tokens/params)
-    /// - `ws_connection` — a live WebSocket connection to that URL
     pub fn watch_websock(
         &self,
         endpoint: &str,
         timeout_ms: u32,
     ) -> io::Result<(RegenerateUrl<'b>, String, WsConnection<'b>)> {
-        // Register the watch.
         let watch_resp = self.browser.command(
             "watch",
             serde_json::json!({"endpoint": endpoint}),
@@ -316,7 +336,6 @@ impl<'b> Page<'b> {
             .unwrap_or("w0")
             .to_string();
 
-        // Block until WS endpoint fires.
         let wait_resp = self.browser.command(
             "wait",
             serde_json::json!({"watch_id": watch_id, "timeout_ms": timeout_ms}),
@@ -328,7 +347,6 @@ impl<'b> Page<'b> {
             .unwrap_or(serde_json::Value::Null);
         let url = captured.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
-        // Open our own WS connection to the same URL via C++ network stack.
         let ws = self.browser.websocket(&url)?;
 
         Ok((
@@ -345,7 +363,6 @@ impl<'b> Page<'b> {
 // --- Closure types ---
 
 impl<'b> ReFetch<'b> {
-    /// Replay the exact captured HTTP request. Returns a fresh response.
     pub fn call(&self) -> io::Result<Response> {
         let mut params = serde_json::json!({
             "method": self.method,
@@ -374,7 +391,6 @@ impl<'b> ReFetch<'b> {
 }
 
 impl<'b> GeneratePayload<'b> {
-    /// Re-invoke the JS caller function. Returns new captured request data.
     pub fn call(&self) -> io::Result<CapturedCall> {
         let resp = self.browser.command(
             "replay",
@@ -389,7 +405,6 @@ impl<'b> GeneratePayload<'b> {
 }
 
 impl<'b> RegenerateUrl<'b> {
-    /// Re-invoke the JS caller. Returns the new WebSocket URL with fresh tokens.
     pub fn call(&self) -> io::Result<String> {
         let resp = self.browser.command(
             "replay",

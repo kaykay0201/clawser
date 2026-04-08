@@ -5,6 +5,9 @@
 #include "clawser/browser/net_websocket.h"
 
 #include "base/logging.h"
+#include "net/base/isolation_info.h"
+#include "net/cookies/site_for_cookies.h"
+#include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "url/origin.h"

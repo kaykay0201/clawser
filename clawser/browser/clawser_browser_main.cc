@@ -9,19 +9,17 @@
 #pragma allow_unsafe_libc_calls
 #endif
 
-#include <iostream>
 #include <memory>
 #include <string>
 
-#include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/functional/bind.h"
-#include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/process/process.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "clawser/browser/browser_controller.h"
@@ -67,21 +65,11 @@ void WriteJsonLine(const std::string& json_with_newline) {
 
 namespace {
 
-// Chrome version table — reused from clawser_fetch_impl.cc.
-struct ChromeVersionInfo {
-  const char* version;
-  const char* grease_brand;
-  const char* grease_version;
-};
-
-// Only claim Chrome 135 — must match our Chromium branch (6998 = Chrome 135).
-// Claiming older versions creates a UA ↔ JA3/JA4 mismatch that Akamai and
-// other TLS fingerprinters detect (the TLS ClientHello is always Chrome 135
-// regardless of what UA string we set).
-constexpr ChromeVersionInfo kChromeVersions[] = {
-    {"135", "Not-A.Brand", "8"},
-};
-constexpr size_t kNumChromeVersions = std::size(kChromeVersions);
+// Chrome 135 — must match our Chromium branch (6998).
+// The TLS ClientHello is always Chrome 135, so the UA must match.
+constexpr char kChromeVersion[] = "135";
+constexpr char kGreaseBrand[] = "Not-A.Brand";
+constexpr char kGreaseVersion[] = "8";
 
 // Seed struct matching the C API / Rust crate.
 struct Seed {
@@ -97,36 +85,15 @@ Seed GenerateRandomSeed() {
           base::RandUint64(), base::RandUint64()};
 }
 
-uint64_t ParseSeedField(const base::Value::Dict& dict, const char* key) {
-  // Rust sends seeds as strings ("12345") for full uint64 precision.
-  // Also handle doubles for backwards compatibility.
-  if (const std::string* s = dict.FindString(key)) {
-    uint64_t val = 0;
-    base::StringToUint64(*s, &val);
-    return val;
-  }
-  return static_cast<uint64_t>(dict.FindDouble(key).value_or(0));
-}
-
-Seed ParseSeedFromJson(const base::Value::Dict& seed_dict) {
-  return {ParseSeedField(seed_dict, "hw_seed"),
-          ParseSeedField(seed_dict, "canvas_seed"),
-          ParseSeedField(seed_dict, "webgl_seed"),
-          ParseSeedField(seed_dict, "audio_seed"),
-          ParseSeedField(seed_dict, "client_rects_seed")};
-}
-
 // Builds a full ClawserConfig JSON from seed values and applies it
 // to the global ClawserConfigManager singleton.
 // Reused logic from clawser/fetch/clawser_fetch_impl.cc ApplySeedToConfig.
 void ApplySeedToConfig(const Seed& seed) {
   const auto& profiles = GetHardwareProfiles();
   size_t hw_idx = seed.hw_seed % profiles.size();
-  size_t ver_idx = (seed.hw_seed >> 32) % kNumChromeVersions;
   const HardwareProfile& hw = profiles[hw_idx];
-  const auto& ver = kChromeVersions[ver_idx];
 
-  std::string v = ver.version;
+  std::string v = kChromeVersion;
   std::string ua =
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/" + v + ".0.0.0 Safari/537.36";
@@ -144,8 +111,8 @@ void ApplySeedToConfig(const Seed& seed) {
     b2.Set("version", v);
     brands.Append(std::move(b2));
     base::Value::Dict b3;
-    b3.Set("brand", ver.grease_brand);
-    b3.Set("version", ver.grease_version);
+    b3.Set("brand", kGreaseBrand);
+    b3.Set("version", kGreaseVersion);
     brands.Append(std::move(b3));
   }
   nav_ua_data.Set("brands", std::move(brands));
@@ -224,29 +191,10 @@ void ApplySeedToConfig(const Seed& seed) {
   ClawserConfigManager::GetInstance().ParseJson(json);
 }
 
-// Reads the first stdin line synchronously (the init command).
-// Must be called BEFORE content::ContentMain blocks.
-base::Value::Dict ReadInitCommand() {
-  std::string line;
-  if (!std::getline(std::cin, line) || line.empty()) {
-    LOG(ERROR) << "Failed to read init command from stdin";
-    return base::Value::Dict();
-  }
-
-  auto parsed = base::JSONReader::ReadAndReturnValueWithError(line);
-  if (!parsed.has_value() || !parsed->is_dict()) {
-    LOG(ERROR) << "Invalid init JSON: " << line;
-    return base::Value::Dict();
-  }
-
-  return std::move(parsed->GetDict());
-}
-
 // Global state passed from main() to the browser start callback.
 struct StartupState {
   Seed seed;
   std::vector<std::string> watch_endpoints;
-  int init_id = 0;
 };
 
 StartupState g_startup_state;
@@ -267,12 +215,13 @@ class ClawserBrowserApp {
     controller_ = std::make_unique<BrowserController>(browser_, context);
     handler_ = std::make_unique<MessageHandler>(controller_.get());
 
-    // Register pre-configured watches
+    // Register pre-configured watches from --clawser-watch
     for (const auto& endpoint : g_startup_state.watch_endpoints) {
       controller_->AddWatch(endpoint);
     }
 
-    // Send init response using base::Value for clean JSON serialization
+    // Send ready signal — browser is fully initialized with antidetect.
+    // Rust waits for this line before sending any commands.
     const auto& s = g_startup_state.seed;
     base::Value::Dict seed_dict;
     seed_dict.Set("hw_seed", base::NumberToString(s.hw_seed));
@@ -282,13 +231,12 @@ class ClawserBrowserApp {
     seed_dict.Set("client_rects_seed",
                   base::NumberToString(s.client_rects_seed));
 
-    base::Value::Dict response;
-    response.Set("id", g_startup_state.init_id);
-    response.Set("ok", true);
-    response.Set("seed", std::move(seed_dict));
+    base::Value::Dict ready;
+    ready.Set("ready", true);
+    ready.Set("seed", std::move(seed_dict));
 
     std::string json;
-    base::JSONWriter::Write(response, &json);
+    base::JSONWriter::Write(ready, &json);
     json += "\n";
     WriteJsonLine(json);
 
@@ -370,47 +318,59 @@ int main(int argc, const char** argv) {
     return 0;  // Not reached
   }
 
-  // Browser process — read init command from stdin BEFORE blocking
-  LOG(INFO) << "[clawser] Browser process starting, reading init...";
-  auto init_cmd = clawser::browser::ReadInitCommand();
-  int init_id = init_cmd.FindInt("id").value_or(0);
+  // Browser process — all config via command line, no stdin before start.
+  //   --clawser-seed=hw,canvas,webgl,audio,rects  (optional, random if omitted)
+  //   --clawser-watch=endpoint1,endpoint2          (optional)
+  //   --headless                                   (optional, default headful)
+  LOG(INFO) << "[clawser] Browser process starting...";
 
   // Parse or generate seed
   clawser::browser::Seed seed;
-  const base::Value::Dict* seed_dict = init_cmd.FindDict("seed");
-  if (seed_dict) {
-    seed = clawser::browser::ParseSeedFromJson(*seed_dict);
-    LOG(INFO) << "[clawser] Using provided seed, hw=" << seed.hw_seed;
+  std::string seed_str =
+      command_line.GetSwitchValueASCII("clawser-seed");
+  if (!seed_str.empty()) {
+    // Format: "hw,canvas,webgl,audio,rects"
+    std::vector<std::string> parts = base::SplitString(
+        seed_str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+    if (parts.size() == 5) {
+      base::StringToUint64(parts[0], &seed.hw_seed);
+      base::StringToUint64(parts[1], &seed.canvas_seed);
+      base::StringToUint64(parts[2], &seed.webgl_seed);
+      base::StringToUint64(parts[3], &seed.audio_seed);
+      base::StringToUint64(parts[4], &seed.client_rects_seed);
+      LOG(INFO) << "[clawser] Using provided seed, hw=" << seed.hw_seed;
+    } else {
+      seed = clawser::browser::GenerateRandomSeed();
+      LOG(WARNING) << "[clawser] Bad --clawser-seed format, using random";
+    }
   } else {
     seed = clawser::browser::GenerateRandomSeed();
     LOG(INFO) << "[clawser] Generated random seed, hw=" << seed.hw_seed;
   }
 
-  // Parse watch list
-  std::vector<std::string> watches;
-  const base::Value::List* watch_list = init_cmd.FindList("watch");
-  if (watch_list) {
-    for (const auto& val : *watch_list) {
-      if (val.is_string())
-        watches.push_back(val.GetString());
-    }
-  }
-
-  // Store in global state for the callback
   clawser::browser::g_startup_state.seed = seed;
-  clawser::browser::g_startup_state.watch_endpoints = std::move(watches);
-  clawser::browser::g_startup_state.init_id = init_id;
+
+  // Parse watch endpoints
+  std::string watch_str =
+      command_line.GetSwitchValueASCII("clawser-watch");
+  if (!watch_str.empty()) {
+    clawser::browser::g_startup_state.watch_endpoints = base::SplitString(
+        watch_str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  }
 
   // Apply antidetect profile
   clawser::browser::ApplySeedToConfig(seed);
 
-
-  // Append headless switches
-  command_line.AppendSwitch("headless");
+  // Core switches — always needed
   command_line.AppendSwitch("single-process");
   command_line.AppendSwitch("no-sandbox");
   command_line.AppendSwitch("disable-gpu");
   command_line.AppendSwitch("clawser-browser");
+
+  // Headless is optional — Rust controls via --headless flag
+  if (!command_line.HasSwitch("headless")) {
+    LOG(INFO) << "[clawser] Running in headful mode";
+  }
 
   // Create headless browser with our start callback
   clawser::browser::ClawserBrowserApp app;

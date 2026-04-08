@@ -4,6 +4,7 @@
 
 #include "clawser/browser/browser_controller.h"
 
+#include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -11,7 +12,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "clawser/browser/cdp_client.h"
 #include "clawser/browser/net_websocket.h"
-#include "base/command_line.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -21,6 +21,10 @@
 #include "headless/public/headless_browser.h"
 #include "headless/public/headless_browser_context.h"
 #include "headless/public/headless_web_contents.h"
+#include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_access_result.h"
+#include "net/cookies/cookie_options.h"
+#include "net/cookies/cookie_partition_key_collection.h"
 #include "net/http/http_request_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"

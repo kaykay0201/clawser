@@ -32,30 +32,30 @@ pub(crate) fn send_command(
     Ok(id)
 }
 
-/// Send the init command (id=0, special case).
-pub(crate) fn send_init(
-    stdin: &mut ChildStdin,
-    seed: Option<&crate::types::Seed>,
-    watch: &[String],
-) -> io::Result<()> {
-    let mut map = serde_json::Map::new();
-    map.insert("id".to_string(), Value::from(0));
-    map.insert("cmd".to_string(), Value::from("init"));
-
-    if let Some(s) = seed {
-        map.insert("seed".to_string(), serde_json::to_value(s).unwrap());
+/// Wait for the ready signal from the browser process.
+/// The browser writes {"ready":true,"seed":{...}} after full initialization.
+pub(crate) fn read_ready(
+    stdout: &mut BufReader<ChildStdout>,
+) -> io::Result<Value> {
+    let mut line = String::new();
+    let bytes_read = stdout.read_line(&mut line)?;
+    if bytes_read == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "browser process closed stdout before ready signal",
+        ));
     }
 
-    if !watch.is_empty() {
-        let watch_arr: Vec<Value> = watch.iter().map(|w| Value::from(w.as_str())).collect();
-        map.insert("watch".to_string(), Value::Array(watch_arr));
+    let parsed: Value =
+        serde_json::from_str(line.trim()).map_err(|e| io::Error::other(e))?;
+
+    if !parsed.get("ready").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return Err(io::Error::other(format!(
+            "expected ready signal, got: {}", line.trim()
+        )));
     }
 
-    let line = serde_json::to_string(&Value::Object(map))
-        .map_err(|e| io::Error::other(e))?;
-    writeln!(stdin, "{}", line)?;
-    stdin.flush()?;
-    Ok(())
+    Ok(parsed)
 }
 
 /// Read a JSON response line from stdout. Blocks until a line is available.

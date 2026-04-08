@@ -16,12 +16,10 @@
 #include <cstring>
 #include <map>
 #include <memory>
-#include "base/no_destructor.h"
 #include <string_view>
 #include <utility>
 
 #include "base/containers/span.h"
-#include "clawser/clawser_config.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -31,6 +29,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/no_destructor.h"
 #include "base/notreached.h"
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"

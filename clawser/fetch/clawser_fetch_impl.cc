@@ -72,19 +72,10 @@ class BaseInitializer {
   base::AtExitManager at_exit_;
 };
 
-struct ChromeVersionInfo {
-  const char* version;
-  const char* grease_brand;
-  const char* grease_version;
-};
-
-// Only Chrome 135 — must match our Chromium branch (6998 = Chrome 135).
-// Claiming older versions creates UA ↔ JA3/JA4 mismatch detectable by
-// Akamai and other TLS fingerprinters.
-constexpr ChromeVersionInfo kChromeVersions[] = {
-    {"135", "Not-A.Brand", "8"},
-};
-constexpr size_t kNumChromeVersions = std::size(kChromeVersions);
+// Chrome 135 — must match our Chromium branch (6998).
+constexpr char kChromeVersion[] = "135";
+constexpr char kGreaseBrand[] = "Not-A.Brand";
+constexpr char kGreaseVersion[] = "8";
 
 // Chrome's canonical header order for navigation requests.
 // WAFs fingerprint header ordering — sending them out of order is a bot signal.
@@ -142,9 +133,7 @@ void FetchSession::ApplySeedToConfig(uint64_t hw_seed,
                                      uint64_t client_rects_seed) {
   const auto& profiles = GetHardwareProfiles();
   size_t hw_idx = hw_seed % profiles.size();
-  size_t ver_idx = (hw_seed >> 32) % kNumChromeVersions;
   const HardwareProfile& hw = profiles[hw_idx];
-  const auto& ver = kChromeVersions[ver_idx];
 
   std::string json = base::StringPrintf(
       R"({
@@ -198,9 +187,9 @@ void FetchSession::ApplySeedToConfig(uint64_t hw_seed,
   "bluetooth": { "enabled": false },
   "usb": { "enabled": false }
 })",
-      hw_seed, ver.version, ver.version, hw.hardware_concurrency,
-      hw.device_memory, ver.version, ver.version,
-      ver.grease_brand, ver.grease_version, hw.screen_width,
+      hw_seed, kChromeVersion, kChromeVersion, hw.hardware_concurrency,
+      hw.device_memory, kChromeVersion, kChromeVersion,
+      kGreaseBrand, kGreaseVersion, hw.screen_width,
       hw.screen_height, hw.screen_width, hw.screen_height - 40,
       hw.gl_vendor.c_str(), hw.gl_renderer.c_str(), canvas_seed, webgl_seed,
       audio_seed, client_rects_seed);

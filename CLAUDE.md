@@ -59,7 +59,19 @@ buildtools/win/gn.exe args out/Default
 gclient sync
 ```
 
-**If build.ninja gets corrupted** (ninja says "premature end of file; recovering"): re-run `gn gen out/Default` with the env vars above to regenerate it.
+**Convenience build script** (handles env vars, Ctrl+C safety, corruption detection):
+```bash
+./build.sh                        # Build clawser_browser, 70% cores
+./build.sh chrome                 # Build chrome
+./build.sh -j8 clawser_browser    # Custom thread count
+./build.sh --clean                # Force gn gen + build
+./build.sh --kill                 # Gracefully stop a running build
+./build.sh --status               # Check if build is running
+```
+
+**NEVER kill ninja mid-build** (taskkill, Ctrl+C without the build script, closing terminal). Interrupted ninja corrupts `.ninja_deps`/`.ninja_log`, forcing a full 16k+ step rebuild. Use `./build.sh --kill` or let it finish. If already corrupted (ninja says "premature end of file; recovering"): re-run `gn gen out/Default` to regenerate. Ninja will do a full rebuild but dependency tracking will be restored.
+
+**NEVER start two ninja builds simultaneously** on the same `out/` directory. This corrupts the dependency database and build artifacts, causing heap corruption crashes (`0xc0000374`) from DLL/exe version mismatch.
 
 Current build config (`out/Default/args.gn`): `is_debug=false`, `is_component_build=true`, `enable_nacl=false`, `symbol_level=1`, `blink_symbol_level=0`.
 
@@ -248,7 +260,6 @@ Rust user code → clawser-browser crate → stdin/stdout JSON → clawser_brows
 | `net_websocket.h/cc` | Mojo-based WebSocket client. Pure C++ network stack — zero JS, fully antidetect TLS |
 | `watcher_engine.h/cc` | Injects fetch/XHR/WebSocket hooks into V8 contexts at creation time. Hooks signal via `console.debug('__clawser_captured__', data)` + `debugger;` |
 | `chrome_object_setup.h/cc` | Injects `window.chrome` object via V8 C++ API (undetectable) |
-| `watch_registry.h` | Process-global watch endpoint list shared between browser and renderer threads |
 
 ### JSON Protocol Commands
 
@@ -286,10 +297,10 @@ let msg = ws.recv(5000)?;
 
 ### Key Design Decisions
 
-- **stdout bypass**: On Windows, `RouteStdioToConsole()` in headless mode destroys CRT pipe handles. Raw `HANDLE g_raw_stdout` is saved at process start, `WriteJsonLine()` uses `WriteFile()` directly.
+- **stdout bypass**: On Windows, `RouteStdioToConsole()` in headless mode does `freopen("CONOUT$", stdout)` which `CloseHandle()`s the original pipe. We `DuplicateHandle()` the stdout handle at process start to get an independent copy that survives freopen. `WriteJsonLine()` uses `WriteFile()` directly on this duplicate.
 - **WeakPtr safety**: `StdinReadLoop()` runs on a dedicated thread. Must use `base::Unretained(this)` (not `GetWeakPtr()`) because `WeakPtrFactory` is bound to the UI thread. Safe because destructor calls `stdin_thread_.Stop()` first.
 - **Rust `creation_flags(0)`**: Rust sets `CREATE_NO_WINDOW` by default when spawning. Chromium's CRT needs a console for pipe stdout to work — `cmd.creation_flags(0)` overrides this.
-- **Watch propagation**: Watches use a process-global `GetWatchRegistry()` (in `watch_registry.h`) instead of `--clawser-watch` command line flag. Avoids switch accumulation from repeated `AppendSwitchASCII`.
+- **Watch propagation**: Watches use `CommandLine::AppendSwitchASCII("clawser-watch")` with comma-separated endpoints. The renderer's `BuildHookScript()` reads this switch to inject hooks. `AppendSwitchASCII` uses map semantics (overwrites), so repeated calls are safe.
 - **WebSocket via Mojo**: `NetWebSocket` uses `NetworkContext::CreateWebSocket` directly — no JS injection, same TLS/cookie pool as the page.
 - **Fetch via SimpleURLLoader**: Uses `StoragePartition::GetURLLoaderFactoryForBrowserProcess()` — shares cookies, TLS state, connection pool with the browser.
 

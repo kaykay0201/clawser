@@ -71,6 +71,7 @@ target(link_target_type, "child") {
     "//base",
     "//build/config/compiler:compiler_buildflags",
     "//cc/paint",
+    "//clawser",
     "//components/discardable_memory/client",
     "//components/discardable_memory/public/mojom",
     "//components/metrics",
