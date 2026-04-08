@@ -36,6 +36,7 @@
 #include "headless/public/headless_browser_context.h"
 
 #if BUILDFLAG(IS_WIN)
+#include <io.h>
 #include <windows.h>
 #include "content/public/app/sandbox_helper_win.h"
 #include "sandbox/win/src/sandbox_types.h"
@@ -316,13 +317,24 @@ void ChildProcessMain(content::ContentMainParams params) {
 
 int main(int argc, const char** argv) {
 #if BUILDFLAG(IS_WIN)
-  // DuplicateHandle the raw stdout BEFORE anything can modify it.
-  // ContentMain calls RouteStdioToConsole which does freopen("CONOUT$", stdout)
-  // when --headless is set. freopen internally CloseHandle()s the original
-  // pipe handle, which would invalidate a simple GetStdHandle() copy.
-  // DuplicateHandle creates an independent OS handle that survives freopen.
+  // Save a duplicate of the stdout pipe handle BEFORE ContentMain modifies it.
+  // RouteStdioToConsole (headless mode) does freopen("CONOUT$", stdout) which
+  // CloseHandle()s the original pipe. DuplicateHandle survives that.
+  //
+  // We also try _get_osfhandle(1) as fallback — on some Windows configs with
+  // STARTF_USESTDHANDLES, GetStdHandle may return the console handle instead
+  // of the piped handle set by the parent process.
   {
-    HANDLE original = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE original = INVALID_HANDLE_VALUE;
+    // Try CRT fd 1 first (most reliable for piped handles).
+    intptr_t fd1 = _get_osfhandle(1);
+    if (fd1 != -1 && fd1 != (intptr_t)INVALID_HANDLE_VALUE) {
+      original = (HANDLE)fd1;
+    }
+    // Fallback to GetStdHandle.
+    if (original == INVALID_HANDLE_VALUE) {
+      original = GetStdHandle(STD_OUTPUT_HANDLE);
+    }
     if (original != INVALID_HANDLE_VALUE) {
       DuplicateHandle(GetCurrentProcess(), original, GetCurrentProcess(),
                       &clawser::browser::g_raw_stdout, 0, FALSE,
