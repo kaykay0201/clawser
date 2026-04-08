@@ -1,4 +1,4 @@
-source_set("clawser") {
+component("clawser") {
   sources = [
     "audio_noise.cc",
     "audio_noise.h",
@@ -8,6 +8,7 @@ source_set("clawser") {
     "client_rects_noise.h",
     "clawser_config.cc",
     "clawser_config.h",
+    "clawser_export.h",
     "dns_spoof.cc",
     "dns_spoof.h",
     "font_spoof.cc",
@@ -30,6 +31,8 @@ source_set("clawser") {
     "webrtc_spoof.h",
   ]
 
+  defines = [ "IS_CLAWSER_IMPL" ]
+
   deps = [
     "//base",
     "//third_party/icu",
@@ -41,17 +44,23 @@ source_set("clawser") {
 
   visibility = [
     "//base:*",
+    "//cc:*",
+    "//clawser/browser:*",
+    "//clawser/fetch:*",
+    "//headless:*",
     "//chrome/browser:*",
     "//chrome/common:*",
+    "//content:*",
     "//content/browser:*",
     "//content/child:*",
     "//content/common:*",
     "//content/renderer:*",
-    "//net/url_request:*",
+    "//gpu:*",
     "//gpu/config:*",
     "//gpu/command_buffer/service:*",
     "//net:*",
     "//net/dns:*",
+    "//net/url_request:*",
     "//third_party/blink/renderer/core:*",
     "//third_party/blink/renderer/modules:*",
     "//third_party/blink/renderer/platform:*",

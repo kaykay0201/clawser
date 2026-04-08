@@ -4,27 +4,29 @@
 #include <string>
 #include <vector>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-bool IsNavigatorSpoofEnabled();
+CLAWSER_EXPORT bool IsNavigatorSpoofEnabled();
 
-std::string GetSpoofedUserAgent();
-std::string GetSpoofedPlatform();
-std::string GetSpoofedVendor();
-std::string GetSpoofedAppVersion();
-std::string GetSpoofedLanguage();
-std::vector<std::string> GetSpoofedLanguages();
-int GetSpoofedHardwareConcurrency();
-int GetSpoofedDeviceMemory();
-int GetSpoofedMaxTouchPoints();
-std::string GetSpoofedDoNotTrack();
+CLAWSER_EXPORT std::string GetSpoofedUserAgent();
+CLAWSER_EXPORT std::string GetSpoofedPlatform();
+CLAWSER_EXPORT std::string GetSpoofedVendor();
+CLAWSER_EXPORT std::string GetSpoofedAppVersion();
+CLAWSER_EXPORT std::string GetSpoofedLanguage();
+CLAWSER_EXPORT std::vector<std::string> GetSpoofedLanguages();
+CLAWSER_EXPORT int GetSpoofedHardwareConcurrency();
+CLAWSER_EXPORT int GetSpoofedDeviceMemory();
+CLAWSER_EXPORT int GetSpoofedMaxTouchPoints();
+CLAWSER_EXPORT std::string GetSpoofedDoNotTrack();
 
-struct SpoofedBrandVersion {
+struct CLAWSER_EXPORT SpoofedBrandVersion {
   std::string brand;
   std::string version;
 };
 
-std::vector<SpoofedBrandVersion> GetSpoofedBrands();
+CLAWSER_EXPORT std::vector<SpoofedBrandVersion> GetSpoofedBrands();
 
 }  // namespace clawser
 

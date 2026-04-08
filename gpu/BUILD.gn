@@ -45,6 +45,7 @@ config("webgpu_implementation") {
 
 component("gpu") {
   public_deps = [
+    "//clawser",
     "//gpu/command_buffer/client:client_sources",
     "//gpu/command_buffer/common:common_sources",
     "//gpu/command_buffer/service:service_sources",
@@ -56,6 +57,7 @@ component("gpu") {
 
 component("gles2") {
   public_deps = [
+    "//clawser",
     "//gpu/command_buffer/client:gles2_cmd_helper_sources",
     "//gpu/command_buffer/common:gles2_sources",
     "//gpu/command_buffer/common:raster_sources",

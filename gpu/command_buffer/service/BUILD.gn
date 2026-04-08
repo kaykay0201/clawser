@@ -75,12 +75,12 @@ target(link_target_type, "service_sources") {
 
   public_deps = [
     "//base",
+    "//clawser",
     "//gpu/command_buffer/common:common_sources",
     "//url:url",
   ]
   deps = [
     "//base",
-    "//clawser",
     "//gpu/command_buffer/client:client_sources",
     "//gpu/config:config_sources",
     "//gpu/ipc/common:ipc_common_sources",

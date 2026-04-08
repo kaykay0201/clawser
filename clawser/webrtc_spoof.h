@@ -4,20 +4,21 @@
 #include <string>
 
 #include "clawser/clawser_config.h"
+#include "clawser/clawser_export.h"
 
 namespace clawser {
 
-WebRtcPolicy GetWebRtcPolicy();
+CLAWSER_EXPORT WebRtcPolicy GetWebRtcPolicy();
 
-std::string GetFakeLocalIp();
+CLAWSER_EXPORT std::string GetFakeLocalIp();
 
-bool ShouldSpoofWebRtc();
+CLAWSER_EXPORT bool ShouldSpoofWebRtc();
 
-bool ShouldBlockAllWebRtc();
+CLAWSER_EXPORT bool ShouldBlockAllWebRtc();
 
-bool ShouldForceRelayOnly();
+CLAWSER_EXPORT bool ShouldForceRelayOnly();
 
-std::string RewriteCandidateIp(const std::string& candidate);
+CLAWSER_EXPORT std::string RewriteCandidateIp(const std::string& candidate);
 
 }  // namespace clawser
 

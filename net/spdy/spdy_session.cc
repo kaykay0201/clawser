@@ -2150,9 +2150,12 @@ void SpdySession::SendInitialData() {
         {65536, 100, 6291456, 262144},
         {4096, 1000, 6291456, 262144},
     };
-    static const size_t s_h2_profile_idx =
-        base::RandGenerator(std::size(kChromeProfiles));
-    const auto& profile = kChromeProfiles[s_h2_profile_idx];
+    // Seed-driven: hw_seed selects H2 profile deterministically.
+    const uint64_t hw_seed =
+        clawser::ClawserConfigManager::GetInstance().GetConfig()
+            .noise_seeds.audio;
+    const size_t h2_idx = hw_seed % std::size(kChromeProfiles);
+    const auto& profile = kChromeProfiles[h2_idx];
     settings_map[spdy::SETTINGS_HEADER_TABLE_SIZE] =
         profile.header_table_size;
     settings_map[spdy::SETTINGS_MAX_CONCURRENT_STREAMS] =
@@ -2184,11 +2187,13 @@ void SpdySession::SendInitialData() {
   if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
     static constexpr int32_t kChromeWindowDeltas[] = {
         15663105, 15728640, 10420225};
-    static const size_t s_window_delta_idx =
-        base::RandGenerator(std::size(kChromeWindowDeltas));
+    const uint64_t hw_seed =
+        clawser::ClawserConfigManager::GetInstance().GetConfig()
+            .noise_seeds.client_rects;
+    const size_t window_idx = hw_seed % std::size(kChromeWindowDeltas);
     session_max_recv_window_size_ =
         session_recv_window_size_ +
-        kChromeWindowDeltas[s_window_delta_idx];
+        kChromeWindowDeltas[window_idx];
   }
   DCHECK_GE(session_max_recv_window_size_, session_recv_window_size_);
   DCHECK_GE(session_recv_window_size_, 0);

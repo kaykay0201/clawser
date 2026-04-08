@@ -4,9 +4,11 @@
 #include <string>
 #include <vector>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-struct HardwareProfile {
+struct CLAWSER_EXPORT HardwareProfile {
   HardwareProfile();
   HardwareProfile(const std::string& vendor,
                   const std::string& renderer,
@@ -28,9 +30,9 @@ struct HardwareProfile {
   int screen_height;
 };
 
-const std::vector<HardwareProfile>& GetHardwareProfiles();
+CLAWSER_EXPORT const std::vector<HardwareProfile>& GetHardwareProfiles();
 
-const HardwareProfile& SelectRandomProfile();
+CLAWSER_EXPORT const HardwareProfile& SelectRandomProfile();
 
 }  // namespace clawser
 

@@ -292,11 +292,13 @@ source_set("host_resolver_manager") {
 
   deps = [
     ":host_resolver",
-    "//clawser",
     "//net:net_deps",
     "//net/dns/public",
   ]
-  public_deps = [ "//net:net_public_deps" ]
+  public_deps = [
+    "//clawser",
+    "//net:net_public_deps",
+  ]
 }
 
 # DnsClient interfaces. Primarily intended as part of the implementation of the
@@ -348,10 +350,10 @@ source_set("dns_client") {
 
   deps = [
     ":host_resolver",
-    "//clawser",
     "//net:net_deps",
   ]
   public_deps = [
+    "//clawser",
     "//net:net_public_deps",
     "//net/dns/public",
   ]

@@ -4,13 +4,15 @@
 #include <cstdint>
 #include <string>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-uint64_t HashElementIdentity(const std::string& tag_name,
+CLAWSER_EXPORT uint64_t HashElementIdentity(const std::string& tag_name,
                               const std::string& class_name,
                               const std::string& id);
 
-void ApplyRectNoise(double& x,
+CLAWSER_EXPORT void ApplyRectNoise(double& x,
                     double& y,
                     double& width,
                     double& height,

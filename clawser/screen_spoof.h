@@ -1,17 +1,19 @@
 #ifndef CLAWSER_SCREEN_SPOOF_H_
 #define CLAWSER_SCREEN_SPOOF_H_
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-bool IsScreenSpoofEnabled();
+CLAWSER_EXPORT bool IsScreenSpoofEnabled();
 
-int GetSpoofedScreenWidth();
-int GetSpoofedScreenHeight();
-int GetSpoofedAvailWidth();
-int GetSpoofedAvailHeight();
-int GetSpoofedColorDepth();
-int GetSpoofedPixelDepth();
-double GetSpoofedDevicePixelRatio();
+CLAWSER_EXPORT int GetSpoofedScreenWidth();
+CLAWSER_EXPORT int GetSpoofedScreenHeight();
+CLAWSER_EXPORT int GetSpoofedAvailWidth();
+CLAWSER_EXPORT int GetSpoofedAvailHeight();
+CLAWSER_EXPORT int GetSpoofedColorDepth();
+CLAWSER_EXPORT int GetSpoofedPixelDepth();
+CLAWSER_EXPORT double GetSpoofedDevicePixelRatio();
 
 }  // namespace clawser
 

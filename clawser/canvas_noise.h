@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
 struct Xorshift128Plus {
@@ -27,7 +29,7 @@ struct Xorshift128Plus {
   }
 };
 
-void ApplyCanvasNoise(uint8_t* data, size_t length, uint64_t seed);
+CLAWSER_EXPORT void ApplyCanvasNoise(uint8_t* data, size_t length, uint64_t seed);
 
 }  // namespace clawser
 

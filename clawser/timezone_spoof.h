@@ -3,13 +3,15 @@
 
 #include <string>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-bool ShouldSpoofTimezone();
+CLAWSER_EXPORT bool ShouldSpoofTimezone();
 
-std::string GetSpoofedTimezone();
+CLAWSER_EXPORT std::string GetSpoofedTimezone();
 
-std::string GetSpoofedLocale();
+CLAWSER_EXPORT std::string GetSpoofedLocale();
 
 }  // namespace clawser
 

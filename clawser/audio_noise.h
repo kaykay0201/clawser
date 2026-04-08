@@ -4,10 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-void ApplyAudioNoise(float* data, size_t length, uint64_t seed);
-void ApplyAudioNoiseUint8(unsigned char* data, size_t length, uint64_t seed);
+CLAWSER_EXPORT void ApplyAudioNoise(float* data, size_t length, uint64_t seed);
+CLAWSER_EXPORT void ApplyAudioNoiseUint8(unsigned char* data, size_t length, uint64_t seed);
 
 }  // namespace clawser
 

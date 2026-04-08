@@ -79,7 +79,6 @@ source_set("browser") {
   ldflags = []
 
   deps = [
-    "//clawser",
     "//base",
     "//base:base_static",
     "//base:clang_profiling_buildflags",
@@ -334,6 +333,7 @@ source_set("browser") {
 
   public_deps = [
     "//base",
+    "//clawser",
     "//components/memory_pressure",
     "//content/browser/indexed_db",
     "//ipc",

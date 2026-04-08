@@ -4,9 +4,11 @@
 #include <string>
 #include <vector>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-struct SpoofedMediaDevice {
+struct CLAWSER_EXPORT SpoofedMediaDevice {
   SpoofedMediaDevice();
   SpoofedMediaDevice(const SpoofedMediaDevice&);
   SpoofedMediaDevice& operator=(const SpoofedMediaDevice&);
@@ -20,9 +22,9 @@ struct SpoofedMediaDevice {
   std::string group_id;
 };
 
-std::vector<SpoofedMediaDevice> GetSpoofedMediaDevices();
+CLAWSER_EXPORT std::vector<SpoofedMediaDevice> GetSpoofedMediaDevices();
 
-std::string GenerateDeterministicDeviceId(const std::string& profile_id,
+CLAWSER_EXPORT std::string GenerateDeterministicDeviceId(const std::string& profile_id,
                                           const std::string& kind,
                                           int index);
 

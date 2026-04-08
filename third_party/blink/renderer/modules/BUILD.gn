@@ -196,6 +196,7 @@ component("modules") {
     ":make_modules_generated",
     "//build:android_buildflags",
     "//cc",
+    "//clawser",
     "//components/webrtc:thread_wrapper",
     "//gin",
     "//net:net",

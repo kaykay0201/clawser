@@ -1,5 +1,9 @@
 #include "clawser/canvas_noise.h"
 
+// TODO(clawser): migrate to base::span.
+// NOLINTBEGIN(unsafe-buffer-usage)
+#pragma allow_unsafe_buffers
+
 namespace clawser {
 
 void ApplyCanvasNoise(uint8_t* data, size_t length, uint64_t seed) {

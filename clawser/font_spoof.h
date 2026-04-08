@@ -4,13 +4,15 @@
 #include <string>
 #include <vector>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-bool ShouldControlFonts();
+CLAWSER_EXPORT bool ShouldControlFonts();
 
-std::vector<std::string> GetAllowedFonts();
+CLAWSER_EXPORT std::vector<std::string> GetAllowedFonts();
 
-bool IsFontAllowed(const std::string& font_name);
+CLAWSER_EXPORT bool IsFontAllowed(const std::string& font_name);
 
 }  // namespace clawser
 

@@ -4,22 +4,24 @@
 #include <cstdint>
 #include <string>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-struct GpuHardwareIds {
+struct CLAWSER_EXPORT GpuHardwareIds {
   uint32_t vendor_id;
   uint32_t device_id;
 };
 
-bool ShouldSpoofGpuInfo();
+CLAWSER_EXPORT bool ShouldSpoofGpuInfo();
 
-std::string GetSpoofedGlVendor();
-std::string GetSpoofedGlRenderer();
+CLAWSER_EXPORT std::string GetSpoofedGlVendor();
+CLAWSER_EXPORT std::string GetSpoofedGlRenderer();
 
-GpuHardwareIds GetSpoofedGpuHardwareIds();
+CLAWSER_EXPORT GpuHardwareIds GetSpoofedGpuHardwareIds();
 
-std::string GetSpoofedDriverVendor();
-std::string GetSpoofedDriverVersion();
+CLAWSER_EXPORT std::string GetSpoofedDriverVendor();
+CLAWSER_EXPORT std::string GetSpoofedDriverVersion();
 
 }  // namespace clawser
 

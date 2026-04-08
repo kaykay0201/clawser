@@ -227,6 +227,7 @@ target(link_target_type, "renderer") {
   defines = []
 
   public_deps = [
+    "//clawser",
     "//content/common:mojo_bindings",
     "//content/public/common:common_sources",
     "//content/public/renderer:render_frame_media_playback_options",
@@ -237,7 +238,6 @@ target(link_target_type, "renderer") {
     "//base",
     "//base:i18n",
     "//build:chromecast_buildflags",
-    "//clawser",
     "//cc",
     "//cc/animation",
     "//cc/mojo_embedder",

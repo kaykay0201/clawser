@@ -362,6 +362,9 @@ bool MediaValues::CalculateThreeDEnabled(LocalFrame* frame) {
 
 mojom::blink::PointerType MediaValues::CalculatePrimaryPointerType(
     LocalFrame* frame) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    return mojom::blink::PointerType::kPointerFineType;
+  }
   DCHECK(frame);
   DCHECK(frame->GetSettings());
   return frame->GetSettings()->GetPrimaryPointerType();
@@ -375,6 +378,9 @@ int MediaValues::CalculateAvailablePointerTypes(LocalFrame* frame) {
 
 mojom::blink::HoverType MediaValues::CalculatePrimaryHoverType(
     LocalFrame* frame) {
+  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
+    return mojom::blink::HoverType::kHoverHoverType;
+  }
   DCHECK(frame);
   DCHECK(frame->GetSettings());
   return frame->GetSettings()->GetPrimaryHoverType();

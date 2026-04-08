@@ -3,13 +3,15 @@
 
 #include <string>
 
+#include "clawser/clawser_export.h"
+
 namespace clawser {
 
-bool ShouldForceDnsOverProxy();
+CLAWSER_EXPORT bool ShouldForceDnsOverProxy();
 
-bool IsProxyConfigured();
+CLAWSER_EXPORT bool IsProxyConfigured();
 
-bool ShouldPreventDirectDns();
+CLAWSER_EXPORT bool ShouldPreventDirectDns();
 
 }  // namespace clawser
 

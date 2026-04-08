@@ -2,6 +2,10 @@
 
 #include <algorithm>
 
+// TODO(clawser): migrate to base::span.
+// NOLINTBEGIN(unsafe-buffer-usage)
+#pragma allow_unsafe_buffers
+
 #include "clawser/canvas_noise.h"
 #include "clawser/clawser_config.h"
 
