@@ -1,10 +1,10 @@
-//! # clawser-browser
+//! # just-fetch
 //!
 //! Async antidetect browser powered by a patched Chromium + CDP.
 //! Native tokio support — all methods are `async`.
 //!
 //! ```no_run
-//! use clawser_browser::Browser;
+//! use just_fetch::Browser;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -116,7 +116,7 @@ impl BrowserBuilder {
             cdp_port,
             config_path,
             profile_id.as_deref(),
-        )?;
+        ).await?;
 
         // Wait for CDP to be ready
         process::wait_for_cdp(cdp_port, Duration::from_secs(30)).await?;

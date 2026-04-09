@@ -1,9 +1,13 @@
 [package]
 name = "clawser-browser"
-version = "0.3.0"
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Antidetect headless/headful browser via Chrome CDP — async tokio native"
+description = "Async headless/headful browser automation with built-in device profile rotation via Chrome CDP"
+repository = "https://github.com/kaykay0201/just-fetch"
+readme = "README.md"
+keywords = ["browser", "headless", "cdp", "automation", "tokio"]
+categories = ["web-programming", "asynchronous"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -12,3 +16,4 @@ tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.26"
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }

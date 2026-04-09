@@ -6,8 +6,18 @@ use std::time::Duration;
 
 use tokio::process::{Child, Command};
 
-/// Find chrome.exe — checks CLAWSER_CHROME_PATH, then exe-relative, then out/Default.
-pub(crate) fn find_chrome_exe() -> io::Result<PathBuf> {
+/// GitHub release URL for auto-download.
+const RELEASE_REPO: &str = "kaykay0201/just-fetch";
+const RELEASE_VERSION: &str = "v0.1.0";
+
+/// Find chrome.exe — searches in order:
+/// 1. CLAWSER_CHROME_PATH env var
+/// 2. Next to current exe
+/// 3. ~/.clawser/chrome/ (auto-downloaded)
+/// 4. out/Default/chrome.exe (dev)
+/// If not found anywhere, auto-downloads from GitHub Release.
+pub(crate) async fn find_chrome_exe() -> io::Result<PathBuf> {
+    // 1. Env var
     if let Ok(path) = env::var("CLAWSER_CHROME_PATH") {
         let p = PathBuf::from(&path);
         if p.exists() {
@@ -15,6 +25,7 @@ pub(crate) fn find_chrome_exe() -> io::Result<PathBuf> {
         }
     }
 
+    // 2. Next to current exe
     if let Ok(exe) = env::current_exe() {
         let dir = exe.parent().unwrap_or(exe.as_ref());
         let candidate = dir.join(chrome_exe_name());
@@ -23,15 +34,122 @@ pub(crate) fn find_chrome_exe() -> io::Result<PathBuf> {
         }
     }
 
+    // 3. Cached download location
+    let cache_dir = chrome_cache_dir();
+    let cached = cache_dir.join(chrome_exe_name());
+    if cached.exists() {
+        return Ok(cached);
+    }
+
+    // 4. Dev path
     let candidate = PathBuf::from("out/Default").join(chrome_exe_name());
     if candidate.exists() {
         return Ok(candidate);
     }
 
+    // 5. Auto-download
+    eprintln!("[clawser-browser] Chrome not found locally. Downloading from GitHub Release...");
+    download_chrome(&cache_dir).await?;
+    if cached.exists() {
+        return Ok(cached);
+    }
+
     Err(io::Error::new(
         io::ErrorKind::NotFound,
-        format!("Cannot find {}. Set CLAWSER_CHROME_PATH env var.", chrome_exe_name()),
+        format!(
+            "Cannot find {}. Set CLAWSER_CHROME_PATH env var or ensure GitHub Release has assets.",
+            chrome_exe_name()
+        ),
     ))
+}
+
+/// ~/.clawser/chrome/
+fn chrome_cache_dir() -> PathBuf {
+    let home = env::var("USERPROFILE")
+        .or_else(|_| env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".clawser").join("chrome")
+}
+
+/// Download chrome zip from GitHub Release and extract to cache_dir.
+async fn download_chrome(cache_dir: &PathBuf) -> io::Result<()> {
+    let asset_name = chrome_asset_name();
+    let url = format!(
+        "https://github.com/{}/releases/download/{}/{}",
+        RELEASE_REPO, RELEASE_VERSION, asset_name
+    );
+
+    eprintln!("[clawser-browser] Downloading: {}", url);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|e| io::Error::other(format!("HTTP client error: {}", e)))?;
+
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "clawser-browser")
+        .send()
+        .await
+        .map_err(|e| io::Error::other(format!("Download failed: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Err(io::Error::other(format!(
+            "Download failed: HTTP {} — ensure release {} has asset '{}'",
+            resp.status(),
+            RELEASE_VERSION,
+            asset_name
+        )));
+    }
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| io::Error::other(format!("Download read failed: {}", e)))?;
+
+    eprintln!(
+        "[clawser-browser] Downloaded {} bytes. Extracting...",
+        bytes.len()
+    );
+
+    // Create cache dir
+    std::fs::create_dir_all(cache_dir)?;
+
+    // Extract zip
+    let cursor = std::io::Cursor::new(&bytes[..]);
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|e| io::Error::other(format!("Zip open failed: {}", e)))?;
+
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| io::Error::other(format!("Zip entry failed: {}", e)))?;
+        let name = file.name().to_string();
+
+        let out_path = cache_dir.join(&name);
+        if name.ends_with('/') {
+            std::fs::create_dir_all(&out_path)?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut out_file = std::fs::File::create(&out_path)?;
+            std::io::copy(&mut file, &mut out_file)?;
+        }
+    }
+
+    eprintln!("[clawser-browser] Extracted to {}", cache_dir.display());
+    Ok(())
+}
+
+fn chrome_asset_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "clawser-chrome-windows-x64.zip"
+    } else if cfg!(target_os = "linux") {
+        "clawser-chrome-linux-x64.zip"
+    } else {
+        "clawser-chrome-macos-x64.zip"
+    }
 }
 
 fn chrome_exe_name() -> &'static str {
@@ -47,13 +165,13 @@ pub(crate) fn pick_free_port() -> io::Result<u16> {
 }
 
 /// Spawn chrome.exe with CDP and antidetect config.
-pub(crate) fn spawn_chrome(
+pub(crate) async fn spawn_chrome(
     headless: bool,
     cdp_port: u16,
     config_path: &str,
     profile_id: Option<&str>,
 ) -> io::Result<Child> {
-    let exe_path = find_chrome_exe()?;
+    let exe_path = find_chrome_exe().await?;
     let exe_dir = exe_path.parent().unwrap_or(exe_path.as_ref());
 
     let mut cmd = Command::new(&exe_path);
@@ -74,9 +192,15 @@ pub(crate) fn spawn_chrome(
         cmd.arg("--headless=new");
     }
 
-    // Stable user-data-dir per profile = cookies persist across sessions.
+    // Stable user-data-dir per profile = cookies/localStorage persist across sessions.
+    // Stored at <crate_root>/.clawser/profiles/ — next to Cargo.toml of the consuming project.
+    // CARGO_MANIFEST_DIR is set by cargo at runtime for examples/tests,
+    // falls back to current_dir for release binaries.
+    let project_root = env::var("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let user_data = match profile_id {
-        Some(id) => env::temp_dir().join(format!("clawser-profile-{}", id)),
+        Some(id) => project_root.join(".clawser").join("profiles").join(id),
         None => env::temp_dir().join(format!("clawser-{}", cdp_port)),
     };
     cmd.arg(format!("--user-data-dir={}", user_data.display()));
