@@ -164,7 +164,7 @@ Defined in `clawser/clawser_config.h`. Top-level keys:
 ### Integration Points by Layer
 
 **Network layer (`net/`)** — 10+ files:
-- TLS cipher + signature algorithm ordering fixed to Chrome 135 (JA3/JA4 match) (`net/socket/ssl_client_socket_impl.cc`)
+- TLS cipher + signature algorithm ordering fixed to Chrome 134 (JA3/JA4 match) (`net/socket/ssl_client_socket_impl.cc`)
 - HTTP/2 fingerprint randomization: pseudo-header ordering, SETTINGS frame values, WINDOW_UPDATE deltas, GREASE (`net/spdy/spdy_http_utils.cc`, `net/spdy/spdy_session.cc`)
 - Socket pool tuning: 32 max sockets/pool, 6 max sockets/group (`net/socket/client_socket_pool_manager.cc`)
 - DNS control: prevent direct DNS, force DNS-over-proxy (`net/dns/host_resolver_manager.cc`, `net/dns/dns_client.cc`)
@@ -181,10 +181,10 @@ Defined in `clawser/clawser_config.h`. Top-level keys:
 - `navigator.*` properties: userAgent, platform, vendor, appVersion, languages, hardwareConcurrency, deviceMemory, maxTouchPoints
 - `screen.*` properties: width, height, availWidth, availHeight, colorDepth, pixelDepth
 - `window.devicePixelRatio`, `window.innerWidth/Height`
-- Canvas fingerprint noise on `getImageData()` (`modules/canvas/canvas2d/base_rendering_context_2d.cc`)
+- Canvas fingerprint noise on `getImageData()` (`modules/canvas/canvas2d/base_rendering_context_2d.cc`) — sparse ~4% pixel coverage, XOR 1 on single channel
 - WebGL parameter spoofing and `readPixels()` noise (`modules/webgl/webgl_rendering_context_base.cc`)
-- Audio fingerprint noise on `AudioBuffer` and `OfflineAudioContext` (`modules/webaudio/`)
-- `Element.getClientRects()` / `getBoundingClientRect()` noise (`core/dom/element.cc`)
+- Audio fingerprint noise (`modules/webaudio/`) — **DISABLED**: hooks commented out, CreepJS trap detection catches any modification
+- `Element.getClientRects()` / `getBoundingClientRect()` noise (`core/dom/element.cc`) — **DISABLED**: CreepJS validates exact expected values, any noise detected as "lie pattern"
 - Media device enumeration spoofing (`modules/mediastream/media_devices.cc`)
 - WebRTC blocking/spoofing (`modules/peerconnection/rtc_peer_connection.cc`)
 - Font cache control (`platform/fonts/font_cache.cc`)
@@ -198,7 +198,7 @@ Defined in `clawser/clawser_config.h`. Top-level keys:
 - `gpu/command_buffer/service/feature_info.cc` — GL renderer string replacement
 
 **Graphics (`cc/`)** — 2 files:
-- Tile size reduced to 128x128 and memory policy to 16MB when clawser active (`cc/trees/layer_tree_settings.cc`, `cc/tiles/image_decode_cache_utils.cc`)
+- `cc/trees/layer_tree_settings.cc`, `cc/tiles/image_decode_cache_utils.cc` — tile size and memory policy adjustments (previously reduced for clawser, restored to defaults to prevent video quality degradation)
 
 **Base layer** — 2 files:
 - ICU timezone/locale override (`base/i18n/icu_util.cc`, `base/i18n/rtl.cc`)
@@ -212,7 +212,7 @@ Files follow a consistent naming convention:
 | `*_spoof.h/.cc` | navigator, screen, webgl, webrtc, gpu_info, font, dns, timezone, media_devices | Getter functions that return spoofed values from config |
 | `*_noise.h/.cc` | canvas, audio, client_rects | Apply deterministic noise to raw data buffers |
 | `clawser_config.h/.cc` | Config struct + singleton manager | JSON parsing, config storage |
-| `hardware_profiles.h/.cc` | 97 realistic GPU/screen profiles | Fallback when config fields are empty — covers NVIDIA RTX 30/40/50, AMD RX 6000/7000/9000, Intel UHD/Iris/Arc across common resolutions. The Rust crate (`clawser-browser/src/profiles.rs`) has 100 profiles with full device configs from Steam Hardware Survey data |
+| `hardware_profiles.h/.cc` | 97 realistic GPU/screen profiles | Fallback when config fields are empty — covers NVIDIA RTX 30/40/50, AMD RX 6000/7000/9000, Intel UHD/Iris/Arc across common resolutions. The Rust crate (`clawser-browser/src/profile.rs`) has 100 profiles with full device configs from Steam Hardware Survey data |
 
 ### Key Design Patterns in Clawser
 
@@ -231,7 +231,7 @@ Files follow a consistent naming convention:
 
 ## Clawser Browser — Rust Crate (`clawser-browser/`)
 
-An async Rust crate that spawns `chrome.exe` with `--clawser-config` and controls it via CDP (Chrome DevTools Protocol) over WebSocket. Supports both headful and headless modes with full antidetect.
+An async Rust crate built on **chromiumoxide 0.9** that launches `chrome.exe` with `--clawser-config` and controls it via CDP. Supports headful and headless modes with full antidetect.
 
 ### Build & Run
 
@@ -241,73 +241,71 @@ An async Rust crate that spawns `chrome.exe` with `--clawser-config` and control
 
 # Build and run Rust examples
 CLAWSER_CHROME_PATH=out/Default/chrome.exe cargo run --manifest-path clawser-browser/Cargo.toml --example smoke_test
+CLAWSER_CHROME_PATH=out/Default/chrome.exe cargo run --manifest-path clawser-browser/Cargo.toml --example game_test
 CLAWSER_CHROME_PATH=out/Default/chrome.exe cargo run --manifest-path clawser-browser/Cargo.toml --example youtube_test
-CLAWSER_CHROME_PATH=out/Default/chrome.exe cargo run --manifest-path clawser-browser/Cargo.toml --example rotate_test
-CLAWSER_CHROME_PATH=out/Default/chrome.exe cargo run --manifest-path clawser-browser/Cargo.toml --example input_test
 ```
 
 ### Architecture
 
 ```
-Rust user code → clawser-browser crate → CDP WebSocket → chrome.exe
-                   (tokio async)           (tungstenite)    (multi-process)
-                                                              ↓
-                                                     Full Chromium browser
-                                                       + V8/Blink + net::
-                                                       + all antidetect patches
-                                                       + --clawser-config=profile.json
+Rust user code → clawser-browser → chromiumoxide → CDP WebSocket → chrome.exe
+                   (BrowserBuilder)   (Browser/Handler)                (multi-process)
+                                                                         ↓
+                                                                Full Chromium browser
+                                                                  + all antidetect patches
+                                                                  + --clawser-config=profile.json
 ```
 
 ### Rust Crate Files (`clawser-browser/src/`)
 
 | File | Purpose |
 |------|---------|
-| `lib.rs` | Public API: `Browser`, `Page`, `BrowserBuilder`. Async CDP methods for navigate, js, click, type, scroll, screenshot, cookies |
-| `process.rs` | Spawns `chrome.exe` with CDP port, waits for readiness via `/json/version`, gets page WebSocket URL |
-| `protocol.rs` | CDP WebSocket send/recv via `tokio-tungstenite`. Matches response IDs, handles events |
-| `profiles.rs` | 100 static device profiles (Steam Hardware Survey data) + deterministic seed generation + config JSON serialization |
-| `types.rs` | Data types: `Cookie`, `Response`, `HwProfile` |
+| `lib.rs` | Public API: `Browser`, `Page`, `BrowserBuilder`. Wraps chromiumoxide with antidetect defaults (`disable_default_args()`, `--clawser-config`, `AutomationControlled` disabled) |
+| `profile.rs` | 100 static device profiles (Steam Hardware Survey data), deterministic config JSON generation via Xorshift64 PRNG, temp file management with Windows path canonicalization |
 
 ### Rust Crate API
 
 ```rust
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Random profile from 100 built-in devices × unlimited seeds
+async fn main() -> clawser_browser::Result<()> {
     let browser = Browser::builder()
-        .headful()          // or .headless()
-        .random()           // or .profile(42, 12345) for deterministic
-        .build().await?;    // or .config("path/to/profile.json")
+        .headful()                      // or .headless() (default)
+        .profile(42, 12345)             // or .random() or .config("path.json")
+        .build().await?;
 
-    let page = browser.navigate("https://target.com").await?;
-
-    // Human behavior simulation (Akamai Layer 3)
-    page.human_idle(2000).await?;     // Random mouse bezier curves
-    page.scroll(300).await?;          // Momentum scroll
-    page.click(600.0, 300.0).await?;  // Move + click with hold
-    page.type_text("query").await?;   // Variable dwell + gap timing
+    let page = browser.new_page("https://target.com").await?;
 
     // JS evaluation
     let title = page.js("document.title").await?;
 
-    // Cookies persist across sessions (same profile = same user-data-dir)
-    let cookies = browser.cookies("https://target.com").await?;
+    // Human input simulation with realistic timing
+    page.click(600.0, 300.0).await?;    // mouseMoved → mousePressed → delay → mouseReleased
+    page.type_text("query").await?;     // per-keystroke jitter (30-130ms)
+    page.scroll(300.0).await?;          // mouseWheel event
 
-    // Screenshot
-    let png = browser.screenshot().await?;
+    // Navigation: non-blocking vs blocking
+    page.navigate("https://other.com").await?;  // fire-and-forget (good for SPAs)
+    page.goto("https://other.com").await?;       // waits for load event
 
-    browser.shutdown().await?;
-    Ok(())
+    // Raw CDP access via chromiumoxide
+    let cdp_page = page.cdp();          // &chromiumoxide::Page
+    let cdp_browser = browser.cdp();    // &chromiumoxide::Browser
+
+    // Connect to already-running Chrome
+    let browser = Browser::connect("ws://127.0.0.1:9222/devtools/browser/...").await?;
+
+    browser.close().await
 }
 ```
 
 ### Key Design Decisions
 
-- **chrome.exe, not custom exe**: Uses the same `chrome.exe` binary for both headful and headless. All antidetect patches are in chrome.exe via `--clawser-config`. No separate `clawser_browser.exe` needed.
-- **CDP over WebSocket**: Standard Chrome DevTools Protocol — same as Chrome DevTools uses. `tokio-tungstenite` for async WebSocket, `reqwest` for CDP endpoint polling.
-- **Profile rotation**: 100 realistic hardware profiles baked into the binary as static data. `profiles::generate_config_json(index, seed)` creates a complete config deterministically. Same (index, seed) = same fingerprint always.
-- **Cookie persistence**: `user-data-dir` is tied to profile ID, not CDP port. Same profile across sessions = Chrome auto-persists cookies including `_abck`.
-- **Async native**: All methods are `async`. Uses `tokio::sync::Mutex`, `tokio::time::sleep`, `tokio::process::Command`. Compatible with `tokio::spawn`, `tokio::join!`, `tokio::select!`.
+- **chromiumoxide 0.9 as CDP core**: Handles WebSocket connection, Handler event loop, target management, and typed CDP commands. The Handler must be polled in a background tokio task (done automatically in `build()`).
+- **`disable_default_args()`**: Removes chromiumoxide's 24 default Chrome args including `--enable-automation` (which sets `navigator.webdriver = true`). Essential for antidetect.
+- **Two navigation modes**: `page.navigate(url)` sends CDP `Page.navigate` without waiting (good for SPAs where load events may not fire). `page.goto(url)` waits for page load.
+- **Profile rotation**: 100 hardware profiles in static data. `generate_config_json(index, seed)` creates a full config deterministically. Same `(index, seed)` = same fingerprint always.
+- **Cookie persistence**: `user-data-dir` is auto-set to `%TEMP%/clawser_profiles/clawser_{index}_{seed}/`. Same profile = cookies persist across sessions.
+- **`cdp()` escape hatch**: Both `Browser::cdp()` and `Page::cdp()` expose the underlying chromiumoxide types for raw CDP access (event listeners, `execute()` any CDP command, etc.).
 
 ## Debugging
 
@@ -377,3 +375,4 @@ Inter-process communication uses Mojo. Interfaces defined in `.mojom` files gene
 - **Windows paths**: Config path goes through `GetSwitchValueASCII()` → `FilePath::FromUTF8Unsafe()`. Non-ASCII paths or UNC paths may fail silently. Use simple ASCII paths.
 - **Must rebuild after BUILD.gn changes**: Chromium's GN build doesn't auto-regenerate. After editing any `BUILD.gn`, run `gn gen out/Default` then `autoninja -C out/Default chrome`. Just running autoninja alone won't pick up new targets or dependency changes.
 - **Component build produces DLLs**: With `is_component_build=true`, each GN target becomes a separate DLL on Windows. This means faster incremental builds but different runtime behavior than the monolithic release build. If a spoofing hook appears to not work, verify it's linked into the correct DLL.
+- **Chrome version must be consistent across all codepaths**: The version in `chrome/VERSION` (currently 134.0.6998.0) must match: (1) `CHROME_MAJOR` in `clawser-browser/src/profile.rs`, (2) `kChromeVersion` in `clawser/fetch/clawser_fetch_impl.cc`, (3) `kChromeVersion` in `clawser/browser/clawser_browser_main.cc`. A version mismatch (e.g., UA says Chrome/135 but binary is 134) causes Akamai to block — the JS engine features won't match the claimed version. The `full_version_list` in Client Hints must use the full build number (134.0.6998.0), not just major.0.0.0. The GREASE brand string must also be consistent (`Not-A.Brand` in C++, must match in Rust).
