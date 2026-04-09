@@ -7,10 +7,11 @@ async fn main() {
     let browser = Browser::builder()
         .headful()
         .profile(7, 777)
-        .build().await
+        .build()
+        .await
         .expect("launch failed");
 
-    let page = browser.navigate("about:blank").await.expect("nav failed");
+    let page = browser.new_page("about:blank").await.expect("page failed");
 
     let checks = &[
         ("webdriver", "navigator.webdriver.toString()"),
@@ -19,17 +20,13 @@ async fn main() {
         ("screen", "screen.width+'x'+screen.height"),
         ("UA", "navigator.userAgent"),
     ];
-    for (name, code) in checks {
-        let val = page.js(code).await.unwrap_or_default();
-        println!("{}: {}", name, val);
+    for (name, expr) in checks {
+        let val = page.js(expr).await.unwrap_or_default();
+        println!("{name}: {val}");
     }
 
-    // Check if clawser config is loaded
-    let cmdline = page.js(
-        "(function(){try{return 'check console for --clawser-config'}catch(e){return e.message}})()"
-    ).await.unwrap_or_default();
-    println!("note: {}", cmdline);
-
     println!("\nBrowser open. Ctrl+C to exit.");
-    loop { tokio::time::sleep(std::time::Duration::from_secs(60)).await; }
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    }
 }

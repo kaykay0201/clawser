@@ -72,8 +72,8 @@ class BaseInitializer {
   base::AtExitManager at_exit_;
 };
 
-// Chrome 135 — must match our Chromium branch (6998).
-constexpr char kChromeVersion[] = "135";
+// Chrome 134 — must match our Chromium branch (134.0.6998.0).
+constexpr char kChromeVersion[] = "134";
 constexpr char kGreaseBrand[] = "Not-A.Brand";
 constexpr char kGreaseVersion[] = "8";
 

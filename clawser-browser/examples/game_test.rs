@@ -1,80 +1,70 @@
-//! Game test: get link → load + behavior simultaneously → wait for EVOSESSIONID.
-//!
-//! Run: CLAWSER_CHROME_PATH=out/Release/chrome.exe cargo run --release --manifest-path clawser-browser/Cargo.toml --example game_test
-
 use clawser_browser::Browser;
-use std::time::Instant;
+use chromiumoxide::cdp::browser_protocol::network::{
+    EnableParams, EventWebSocketCreated, EventWebSocketClosed,
+};
+use futures_util::StreamExt;
 
 const API_URL: &str = "https://api.abb1211.com/endpoint/play";
 const API_TOKEN: &str = "REDACTED";
 
 #[tokio::main]
 async fn main() {
-    println!("=== Game Test ===\n");
+    println!("=== Game Test + WS Detection ===\n");
 
-    // 1. Get game URL
+    // 1. Fetch game URL
+    println!("Fetching game URL...");
     let client = reqwest::Client::new();
     let resp = client
         .post(API_URL)
-        .header("Accept", "application/json")
-        .header("Authorization", format!("Bearer {}", API_TOKEN))
+        .header("Authorization", format!("Bearer {API_TOKEN}"))
         .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
         .body(r#"{"user_id": "beezsbee"}"#)
         .send()
         .await
-        .expect("API failed");
-    let body: serde_json::Value = resp.json().await.expect("parse failed");
-    let url = body["url"].as_str().expect("no url");
-    println!("[1] Got URL");
+        .expect("API request failed");
 
-    // 2. Launch + navigate
-    let t0 = Instant::now();
-    // Fixed profile — reuses cookies from previous sessions
-    let browser = Browser::builder().headful().profile(7, 777).build().await
-        .expect("browser failed");
-    println!("[2] Browser ready ({:?})", t0.elapsed());
+    let body: serde_json::Value = resp.json().await.expect("JSON parse failed");
+    let game_url = body["url"].as_str().expect("no 'url' in response");
+    println!("Game URL: {game_url}\n");
 
-    let page = browser.navigate(url).await.expect("navigate failed");
-    println!("[3] Navigating... ({:?})", t0.elapsed());
+    // 2. Launch browser
+    let browser = Browser::builder()
+        .headful()
+        .profile(42, 12345)
+        .build()
+        .await
+        .expect("browser launch failed");
 
-    // 3. Behavior + poll cookies simultaneously
-    //    Mouse/scroll runs between cookie checks — doesn't block, keeps Akamai happy
-    let mut session_id = String::new();
-    for i in 0u32..120 {
-        // Quick behavior burst every few iterations
-        if i % 4 == 0 {
-            let x = 200.0 + ((i as f64 * 37.0) % 600.0);
-            let y = 150.0 + ((i as f64 * 23.0) % 400.0);
-            let _ = page.mouse_move(x, y, 5).await;
+    // 3. Open blank page first so we can set up listeners before navigation
+    let page = browser.new_page("about:blank").await.expect("page failed");
+
+    // Enable network domain for WS events
+    page.cdp().execute(EnableParams::default()).await.expect("network enable failed");
+
+    // Set up WS event listeners
+    let mut ws_created = page.cdp().event_listener::<EventWebSocketCreated>().await.expect("listener failed");
+    let mut ws_closed = page.cdp().event_listener::<EventWebSocketClosed>().await.expect("listener failed");
+
+    // Spawn listener tasks
+    tokio::spawn(async move {
+        while let Some(ev) = ws_created.next().await {
+            println!("[WS CREATED] request_id={:?} url={}", ev.request_id, ev.url);
         }
-        if i == 3 {
-            let _ = page.scroll(150).await;
+    });
+
+    tokio::spawn(async move {
+        while let Some(ev) = ws_closed.next().await {
+            println!("[WS CLOSED]  request_id={:?}", ev.request_id);
         }
+    });
 
-        // Check for EVOSESSIONID — use empty string to get ALL cookies
-        let cookies = browser.cookies("").await.unwrap_or_default();
-        if let Some(c) = cookies.iter().find(|c| c.name.contains("EVOSESSIONID")) {
-            session_id = c.value.clone();
-            println!("[4] EVOSESSIONID found in {:?}", t0.elapsed());
-            println!("    {}", session_id);
-            println!("    Total cookies: {}", cookies.len());
-            for c in &cookies {
-                println!("    {}={}", c.name, &c.value[..c.value.len().min(50)]);
-            }
-            break;
-        }
+    // 4. Navigate to game
+    println!("Navigating to game...");
+    page.navigate(game_url).await.expect("nav failed");
 
-        if i == 119 {
-            println!("[4] Timeout after {:?} — no EVOSESSIONID", t0.elapsed());
-        }
-
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-    }
-
-    println!("\n=== BROWSER → SESSION: {:?} ===", t0.elapsed());
-    println!("    Browser stays open. Press Ctrl+C to exit.");
-
-    // Keep alive — don't close browser
+    // 5. Wait and monitor
+    println!("Watching for WebSocket connections...\n");
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
     }
