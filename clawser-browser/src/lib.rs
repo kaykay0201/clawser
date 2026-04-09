@@ -46,9 +46,10 @@ pub struct BrowserBuilder {
 /// A browser instance = 1 chrome.exe process + CDP connection.
 pub struct Browser {
     child: Mutex<Child>,
-    #[allow(dead_code)]
     cdp_port: u16,
     ws: Mutex<protocol::CdpSocket>,
+    /// WebSocket connections detected via CDP Network domain (works for workers + iframes)
+    ws_connections: std::sync::Arc<Mutex<Vec<serde_json::Value>>>,
 }
 
 /// A loaded page within the browser.
@@ -125,10 +126,77 @@ impl BrowserBuilder {
         let ws_url = process::get_page_ws_url(cdp_port).await?;
         let ws = protocol::connect_cdp(&ws_url).await?;
 
+        // Spawn background CDP event listener for WebSocket detection.
+        // Uses browser-level target + Target.setAutoAttach to capture
+        // WebSockets from Service Workers and iframes too.
+        let ws_connections: std::sync::Arc<Mutex<Vec<serde_json::Value>>> =
+            std::sync::Arc::new(Mutex::new(Vec::new()));
+        {
+            // Get browser debugger URL
+            let version_url = format!("http://127.0.0.1:{}/json/version", cdp_port);
+            let resp = reqwest::get(&version_url).await
+                .map_err(|e| io::Error::other(format!("version fetch failed: {}", e)))?;
+            let v: serde_json::Value = resp.json().await
+                .map_err(|e| io::Error::other(format!("version parse failed: {}", e)))?;
+            let browser_ws_url = v["webSocketDebuggerUrl"].as_str().unwrap_or("").to_string();
+
+            if !browser_ws_url.is_empty() {
+                let mut event_ws = protocol::connect_cdp(&browser_ws_url).await?;
+
+                // Auto-attach to ALL child targets (Service Workers, iframes, etc.)
+                let _ = protocol::call_cdp(&mut event_ws, "Target.setAutoAttach", serde_json::json!({
+                    "autoAttach": true,
+                    "waitForDebuggerOnStart": false,
+                    "flatten": true
+                })).await;
+
+                // Enable Network on browser target
+                let _ = protocol::call_cdp(&mut event_ws, "Network.enable", serde_json::json!({})).await;
+
+                let conns = ws_connections.clone();
+                tokio::spawn(async move {
+                    use futures_util::StreamExt;
+                    while let Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) = event_ws.next().await {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                            let method = parsed.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+                            // When a new target attaches (e.g. Service Worker), enable Network on it
+                            if method == "Target.attachedToTarget" {
+                                let session_id = parsed.get("params")
+                                    .and_then(|p| p.get("sessionId"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                if !session_id.is_empty() {
+                                    // Send Network.enable to the attached target's session
+                                    let enable_msg = serde_json::json!({
+                                        "id": 99999,
+                                        "method": "Network.enable",
+                                        "params": {},
+                                        "sessionId": session_id
+                                    });
+                                    use futures_util::SinkExt;
+                                    let text = serde_json::to_string(&enable_msg).unwrap_or_default();
+                                    let _ = event_ws.send(
+                                        tokio_tungstenite::tungstenite::Message::Text(text.into())
+                                    ).await;
+                                }
+                            }
+
+                            // Capture all WebSocket events from any target
+                            if method.starts_with("Network.webSocket") {
+                                conns.lock().await.push(parsed);
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
         Ok(Browser {
             child: Mutex::new(child),
             cdp_port,
             ws: Mutex::new(ws),
+            ws_connections,
         })
     }
 }
@@ -216,6 +284,11 @@ impl Browser {
     }
 
     /// Get cookies for a URL (or all if empty).
+    /// Get CDP port (for advanced target management).
+    pub fn cdp_port(&self) -> u16 {
+        self.cdp_port
+    }
+
     pub async fn cookies(&self, url: &str) -> io::Result<Vec<Cookie>> {
         let mut ws = self.ws.lock().await;
         let params = if url.is_empty() {
@@ -461,6 +534,40 @@ impl<'b> Page<'b> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string())
+    }
+
+    /// Get all detected WebSocket connections (from CDP Network domain).
+    /// Works for main page, iframes, AND workers.
+    pub async fn detected_ws(&self) -> Vec<serde_json::Value> {
+        self.browser.ws_connections.lock().await.clone()
+    }
+
+    /// Wait for a WebSocket connection matching URL pattern (CDP-level detection).
+    pub async fn wait_for_ws(&self, pattern: &str, timeout_ms: u64) -> io::Result<String> {
+        let start = std::time::Instant::now();
+        loop {
+            if start.elapsed().as_millis() as u64 > timeout_ms {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!("No WebSocket matching '{}' after {}ms", pattern, timeout_ms),
+                ));
+            }
+            let events = self.browser.ws_connections.lock().await;
+            for ev in events.iter() {
+                let method = ev.get("method").and_then(|v| v.as_str()).unwrap_or("");
+                if method == "Network.webSocketCreated" {
+                    let url = ev.get("params")
+                        .and_then(|p| p.get("url"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if url.contains(pattern) {
+                        return Ok(url.to_string());
+                    }
+                }
+            }
+            drop(events);
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
     }
 
     /// Execute JavaScript and return the result as a string.
