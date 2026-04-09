@@ -121,67 +121,20 @@ double AnalyserNode::smoothingTimeConstant() const {
 void AnalyserNode::getFloatFrequencyData(NotShared<DOMFloat32Array> array) {
   GetAnalyserHandler().GetFloatFrequencyData(array.Get(),
                                              context()->currentTime());
-
-  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    uint64_t audio_seed =
-        clawser::ClawserConfigManager::GetInstance()
-            .GetConfig()
-            .noise_seeds.audio;
-    if (audio_seed != 0) {
-      clawser::ApplyAudioNoise(
-          array.Get()->Data(), array.Get()->length(),
-          audio_seed ^ 0xF10A7DA7A0000001ULL);
-    }
-  }
+  // Audio noise disabled — CreepJS trap detection catches any modification.
 }
 
 void AnalyserNode::getByteFrequencyData(NotShared<DOMUint8Array> array) {
   GetAnalyserHandler().GetByteFrequencyData(array.Get(),
                                             context()->currentTime());
-
-  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    uint64_t audio_seed =
-        clawser::ClawserConfigManager::GetInstance()
-            .GetConfig()
-            .noise_seeds.audio;
-    if (audio_seed != 0) {
-      clawser::ApplyAudioNoiseUint8(
-          array.Get()->Data(), array.Get()->length(),
-          audio_seed ^ 0xB17EF4E000000002ULL);
-    }
-  }
 }
 
 void AnalyserNode::getFloatTimeDomainData(NotShared<DOMFloat32Array> array) {
   GetAnalyserHandler().GetFloatTimeDomainData(array.Get());
-
-  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    uint64_t audio_seed =
-        clawser::ClawserConfigManager::GetInstance()
-            .GetConfig()
-            .noise_seeds.audio;
-    if (audio_seed != 0) {
-      clawser::ApplyAudioNoise(
-          array.Get()->Data(), array.Get()->length(),
-          audio_seed ^ 0x71D0DA1A00000003ULL);
-    }
-  }
 }
 
 void AnalyserNode::getByteTimeDomainData(NotShared<DOMUint8Array> array) {
   GetAnalyserHandler().GetByteTimeDomainData(array.Get());
-
-  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    uint64_t audio_seed =
-        clawser::ClawserConfigManager::GetInstance()
-            .GetConfig()
-            .noise_seeds.audio;
-    if (audio_seed != 0) {
-      clawser::ApplyAudioNoiseUint8(
-          array.Get()->Data(), array.Get()->length(),
-          audio_seed ^ 0xDA7A71D000000004ULL);
-    }
-  }
 }
 
 void AnalyserNode::ReportDidCreate() {

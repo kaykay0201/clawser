@@ -37,7 +37,7 @@ async fn main() {
         "out/Default/test_profile.json".to_string()
     });
 
-    println!("=== clawser-browser smoke test (async) ===\n");
+    println!("=== just-fetch smoke test (async) ===\n");
 
     // HEADLESS
     println!("[1] Creating HEADLESS browser...");

@@ -232,10 +232,10 @@ pub fn generate_config_json(profile_index: usize, seed_index: u64) -> String {
   "version": 1,
   "profile_id": "p{}-s{}",
   "navigator": {{
-    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
     "platform": "Win32",
     "vendor": "Google Inc.",
-    "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+    "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
     "language": "{}",
     "languages": [{}],
     "hardware_concurrency": {},
@@ -243,8 +243,8 @@ pub fn generate_config_json(profile_index: usize, seed_index: u64) -> String {
     "max_touch_points": 0,
     "user_agent_data": {{
       "brands": [
-        {{"brand": "Google Chrome", "version": "135"}},
-        {{"brand": "Chromium", "version": "135"}},
+        {{"brand": "Google Chrome", "version": "134"}},
+        {{"brand": "Chromium", "version": "134"}},
         {{"brand": "Not-A.Brand", "version": "8"}}
       ],
       "mobile": false,

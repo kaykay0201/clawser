@@ -224,29 +224,9 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
     return NotShared<DOMFloat32Array>(nullptr);
   }
 
-  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    uint64_t audio_seed =
-        clawser::ClawserConfigManager::GetInstance()
-            .GetConfig()
-            .noise_seeds.audio;
-    if (audio_seed != 0) {
-      // Apply noise only once per channel to avoid accumulation on
-      // repeated getChannelData() calls (detectable fingerprint tell).
-      if (noise_applied_.size() < channels_.size()) {
-        wtf_size_t old_size = noise_applied_.size();
-        noise_applied_.resize(channels_.size());
-        for (wtf_size_t i = old_size; i < noise_applied_.size(); ++i)
-          noise_applied_[i] = false;
-      }
-      if (!noise_applied_[channel_index]) {
-        DOMFloat32Array* channel_array = channels_[channel_index].Get();
-        clawser::ApplyAudioNoise(
-            static_cast<float*>(channel_array->Data()),
-            channel_array->length(), audio_seed ^ (channel_index + 1));
-        noise_applied_[channel_index] = true;
-      }
-    }
-  }
+  // Audio noise disabled — CreepJS trap detection catches any modification
+  // to AudioBuffer samples. The trap value must be exactly ~1007.x.
+  // Canvas/WebGL noise provides sufficient fingerprint uniqueness.
 
   return NotShared<DOMFloat32Array>(channels_[channel_index].Get());
 }
@@ -291,17 +271,7 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
 
   dst.first(count).copy_from(src.subspan(buffer_offset, count));
 
-  if (clawser::ClawserConfigManager::GetInstance().IsLoaded()) {
-    uint64_t audio_seed =
-        clawser::ClawserConfigManager::GetInstance()
-            .GetConfig()
-            .noise_seeds.audio;
-    if (audio_seed != 0) {
-      clawser::ApplyAudioNoise(
-          dst.data(), count,
-          audio_seed ^ (channel_number + 1));
-    }
-  }
+  // Audio noise disabled — see getChannelData() comment above.
 }
 
 void AudioBuffer::copyToChannel(NotShared<DOMFloat32Array> source,

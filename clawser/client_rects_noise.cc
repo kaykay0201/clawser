@@ -8,9 +8,11 @@ namespace clawser {
 namespace {
 
 double PrngToNoise(uint64_t value) {
+  // Sub-pixel noise: ±0.000005 — within natural GPU rendering variance.
+  // Large noise (±0.05) is statistically detectable by CreepJS.
   double normalized =
       static_cast<double>(value % 10000) / 10000.0;
-  return (normalized - 0.5) * 0.1;
+  return (normalized - 0.5) * 0.00001;
 }
 
 uint64_t MixHash(uint64_t a, uint64_t b) {
@@ -53,11 +55,15 @@ void ApplyRectNoise(double& x,
   if (seed == 0)
     return;
 
+  // Only noise position (x, y). Keep width/height untouched so that
+  // right == x + width and bottom == y + height remain consistent.
+  // CreepJS validates these invariants to detect spoofing.
   Xorshift128Plus rng(MixHash(seed, element_hash));
-  x += PrngToNoise(rng.Next());
-  y += PrngToNoise(rng.Next());
-  width += PrngToNoise(rng.Next());
-  height += PrngToNoise(rng.Next());
+  double dx = PrngToNoise(rng.Next());
+  double dy = PrngToNoise(rng.Next());
+  x += dx;
+  y += dy;
+  // width and height stay unchanged — dimensions are consistent.
 }
 
 }  // namespace clawser

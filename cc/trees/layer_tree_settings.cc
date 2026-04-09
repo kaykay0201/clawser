@@ -15,16 +15,11 @@
 namespace cc {
 
 LayerTreeSettings::LayerTreeSettings()
-    : default_tile_size(
-          clawser::ClawserConfigManager::GetInstance().IsLoaded()
-              ? gfx::Size(128, 128)
-              : gfx::Size(256, 256)),
+    : default_tile_size(gfx::Size(256, 256)),
       max_untiled_layer_size(gfx::Size(512, 512)),
       minimum_occlusion_tracking_size(gfx::Size(160, 160)),
       memory_policy(
-          clawser::ClawserConfigManager::GetInstance().IsLoaded()
-              ? 16 * 1024 * 1024
-              : 64 * 1024 * 1024,
+          64 * 1024 * 1024,
           gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
           ManagedMemoryPolicy::kDefaultNumResourcesLimit) {}
 
