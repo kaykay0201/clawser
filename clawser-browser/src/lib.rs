@@ -166,7 +166,13 @@ impl BrowserBuilder {
         if let Some(ref udd) = self.user_data_dir {
             cb = cb.user_data_dir(udd);
         } else if let Some(ref id) = profile_id {
-            cb = cb.user_data_dir(std::env::temp_dir().join("clawser_profiles").join(id));
+            // Store profiles next to the chrome exe (project dir), not in %TEMP%.
+            let profiles_dir = std::path::Path::new(&chrome_path)
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("clawser_profiles")
+                .join(id);
+            cb = cb.user_data_dir(profiles_dir);
         }
 
         cb = cb

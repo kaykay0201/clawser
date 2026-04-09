@@ -223,15 +223,9 @@ pub fn generate_config_json(profile_index: usize, seed: u64) -> String {
     let p = &PROFILES[idx];
     let mut rng = Rng::new(seed);
 
-    let tz_idx = rng.range(TIMEZONES.len());
-    let (timezone, locale) = TIMEZONES[tz_idx];
-
-    let langs: Vec<String> = if locale.starts_with("en") {
-        vec![locale.to_string(), "en".to_string()]
-    } else {
-        let base = locale.split('-').next().unwrap();
-        vec![locale.to_string(), base.to_string(), "en-US".to_string(), "en".to_string()]
-    };
+    // No timezone/locale spoofing — use system defaults.
+    // Spoofed timezone mismatches IP geolocation and is a detection signal.
+    let langs: Vec<String> = vec!["en-US".to_string(), "en".to_string()];
 
     let config = serde_json::json!({
         "profile_id": format!("clawser_{}_{}", idx, seed),
@@ -288,8 +282,7 @@ pub fn generate_config_json(profile_index: usize, seed: u64) -> String {
             "audio": rng.next(),
             "client_rects": rng.next()
         },
-        "timezone": timezone,
-        "locale": locale,
+        "locale": "en-US",
         "fonts": FONTS,
         "media_devices": {
             "audio_inputs": 1 + rng.range(2),
