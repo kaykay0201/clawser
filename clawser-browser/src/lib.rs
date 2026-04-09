@@ -414,6 +414,55 @@ impl<'b> Page<'b> {
         Ok(())
     }
 
+    /// Capture full page as MHTML (HTML + JS + CSS + images — everything).
+    /// Save to .mhtml file, opens in Chrome with full fidelity.
+    pub async fn capture_mhtml(&self) -> io::Result<Vec<u8>> {
+        let mut ws = self.browser.ws.lock().await;
+        let resp = protocol::call_cdp(
+            &mut ws,
+            "Page.captureSnapshot",
+            serde_json::json!({"format": "mhtml"}),
+        )
+        .await?;
+        let data = resp
+            .get("result")
+            .and_then(|r| r.get("data"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        Ok(data.as_bytes().to_vec())
+    }
+
+    /// Capture page HTML via DOM API (won't break JS/special chars).
+    /// Returns outerHTML including all `<script>` tags intact.
+    pub async fn capture_html(&self) -> io::Result<String> {
+        let mut ws = self.browser.ws.lock().await;
+        let doc = protocol::call_cdp(
+            &mut ws,
+            "DOM.getDocument",
+            serde_json::json!({"depth": 0}),
+        )
+        .await?;
+        let node_id = doc
+            .get("result")
+            .and_then(|r| r.get("root"))
+            .and_then(|r| r.get("nodeId"))
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| io::Error::other("DOM.getDocument: no root nodeId"))?;
+
+        let resp = protocol::call_cdp(
+            &mut ws,
+            "DOM.getOuterHTML",
+            serde_json::json!({"nodeId": node_id}),
+        )
+        .await?;
+        Ok(resp
+            .get("result")
+            .and_then(|r| r.get("outerHTML"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string())
+    }
+
     /// Execute JavaScript and return the result as a string.
     pub async fn js(&self, code: &str) -> io::Result<String> {
         let mut ws = self.browser.ws.lock().await;
