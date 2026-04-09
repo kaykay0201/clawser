@@ -1,9 +1,12 @@
 [package]
 name = "clawser-browser"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Antidetect browser automation powered by chromiumoxide CDP"
+repository = "https://github.com/kaykay0201/clawser"
+homepage = "https://github.com/kaykay0201/clawser"
+documentation = "https://docs.rs/clawser-browser"
 
 [dependencies]
 chromiumoxide = { version = "0.9", default-features = false }
