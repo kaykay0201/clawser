@@ -5,7 +5,7 @@ use chromiumoxide::cdp::browser_protocol::network::{
 use futures_util::StreamExt;
 
 const API_URL: &str = "https://api.abb1211.com/endpoint/play";
-const API_TOKEN: &str = "REDACTED";
+const API_TOKEN: &str = env!("GAME_API_TOKEN", "Set GAME_API_TOKEN env var");
 
 #[tokio::main]
 async fn main() {
