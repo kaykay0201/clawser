@@ -310,7 +310,9 @@ pub fn write_config_file(profile_index: usize, seed_index: u64) -> io::Result<St
     let path = dir.join(format!("p{}-s{}.json", profile_index, seed_index));
     let mut f = std::fs::File::create(&path)?;
     f.write_all(json.as_bytes())?;
-    Ok(path.to_string_lossy().to_string())
+    // Use canonicalize to get Windows-style path (not MSYS /tmp/...)
+    let canonical = path.canonicalize().unwrap_or(path);
+    Ok(canonical.to_string_lossy().to_string())
 }
 
 /// Pick a random profile index (0..100) using OS entropy.
@@ -331,6 +333,7 @@ pub fn random_seed_index() -> u64 {
 pub fn getrandom(buf: &mut [u8]) {
     #[cfg(windows)]
     {
+        #[link(name = "bcrypt")]
         extern "system" {
             fn BCryptGenRandom(
                 h: *mut u8,
