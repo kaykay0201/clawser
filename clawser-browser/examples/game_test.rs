@@ -4,19 +4,39 @@ use chromiumoxide::cdp::browser_protocol::network::{
 };
 use futures_util::StreamExt;
 
-const API_URL: &str = "https://api.abb1211.com/endpoint/play";
-const API_TOKEN: &str = env!("GAME_API_TOKEN", "Set GAME_API_TOKEN env var");
+fn api_url() -> String {
+    std::env::var("GAME_API_URL").unwrap_or_else(|_| "https://api.abb1211.com/endpoint/play".into())
+}
+fn api_token() -> String {
+    std::env::var("GAME_API_TOKEN").expect("Set GAME_API_TOKEN in .env or env var")
+}
+
+fn load_dotenv() {
+    for path in ["clawser-browser/.env", ".env"] {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') { continue; }
+                if let Some((k, v)) = line.split_once('=') {
+                    std::env::set_var(k.trim(), v.trim());
+                }
+            }
+            break;
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
+    load_dotenv();
     println!("=== Game Test + WS Detection ===\n");
 
     // 1. Fetch game URL
     println!("Fetching game URL...");
     let client = reqwest::Client::new();
     let resp = client
-        .post(API_URL)
-        .header("Authorization", format!("Bearer {API_TOKEN}"))
+        .post(api_url())
+        .header("Authorization", format!("Bearer {}", api_token()))
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
         .body(r#"{"user_id": "beezsbee"}"#)
@@ -59,7 +79,7 @@ async fn main() {
         }
     });
 
-    // 4. Navigate to game
+    // 4. Navigate to game (human simulation runs automatically)
     println!("Navigating to game...");
     page.navigate(game_url).await.expect("nav failed");
 

@@ -17,9 +17,15 @@
 //! }
 //! ```
 
+mod client;
 mod profile;
 
+pub use client::{HttpClient, HttpClientBuilder};
 pub use profile::{generate_config_json, random_profile, write_config_file, HwProfile, PROFILES};
+
+// Re-export wreq types that users need
+pub use wreq;
+pub use wreq::header;
 
 use chromiumoxide::browser::{Browser as CdpBrowser, BrowserConfig};
 use chromiumoxide::cdp::browser_protocol::input::{
@@ -31,6 +37,7 @@ use chromiumoxide::cdp::browser_protocol::page::{CaptureScreenshotParams, Naviga
 use chromiumoxide::Page as CdpPage;
 use futures_util::StreamExt;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::task::JoinHandle;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -43,6 +50,7 @@ pub struct BrowserBuilder {
     profile_choice: ProfileChoice,
     user_data_dir: Option<String>,
     window_size: (u32, u32),
+    proxy: Option<String>,
     extra_args: Vec<String>,
 }
 
@@ -61,6 +69,7 @@ impl Default for BrowserBuilder {
             profile_choice: ProfileChoice::None,
             user_data_dir: None,
             window_size: (1920, 1080),
+            proxy: None,
             extra_args: Vec::new(),
         }
     }
@@ -119,6 +128,19 @@ impl BrowserBuilder {
         self
     }
 
+    /// Set SOCKS5 proxy. Format: `"socks5://user:pass@host:port"`.
+    /// Also accepts `"socks5://host:port"` (no auth).
+    pub fn proxy(mut self, proxy: impl Into<String>) -> Self {
+        self.proxy = Some(proxy.into());
+        self
+    }
+
+    /// Set SOCKS5 proxy from host, port, user, pass components.
+    pub fn proxy_socks5(mut self, host: &str, port: u16, user: &str, pass: &str) -> Self {
+        self.proxy = Some(format!("socks5://{}:{}@{}:{}", user, pass, host, port));
+        self
+    }
+
     /// Add a Chrome launch argument (e.g. `"disable-gpu"`).
     pub fn arg(mut self, arg: impl Into<String>) -> Self {
         self.extra_args.push(arg.into());
@@ -173,6 +195,10 @@ impl BrowserBuilder {
                 .join("clawser_profiles")
                 .join(id);
             cb = cb.user_data_dir(profiles_dir);
+        }
+
+        if let Some(ref proxy) = self.proxy {
+            cb = cb.arg(("proxy-server", proxy.as_str()));
         }
 
         cb = cb
@@ -235,20 +261,29 @@ impl Browser {
     }
 
     /// Open a new tab and navigate to URL.
+    /// Background human simulation (mouse movement + scrolling) starts automatically.
     pub async fn new_page(&self, url: &str) -> Result<Page> {
         let page = self.inner.new_page(url).await?;
-        Ok(Page { inner: page })
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        let sim_page = page.clone();
+        tokio::spawn(async move {
+            human_loop(sim_page, rx, 1920.0, 1080.0).await;
+        });
+        Ok(Page { inner: page, _sim_cancel: tx })
     }
 
-    /// Get all open pages.
+    /// Get all open pages (each gets its own background human simulation).
     pub async fn pages(&self) -> Result<Vec<Page>> {
-        Ok(self
-            .inner
-            .pages()
-            .await?
-            .into_iter()
-            .map(|p| Page { inner: p })
-            .collect())
+        let mut result = Vec::new();
+        for p in self.inner.pages().await? {
+            let (tx, rx) = tokio::sync::watch::channel(false);
+            let sim_page = p.clone();
+            tokio::spawn(async move {
+                human_loop(sim_page, rx, 1920.0, 1080.0).await;
+            });
+            result.push(Page { inner: p, _sim_cancel: tx });
+        }
+        Ok(result)
     }
 
     /// Get all browser cookies.
@@ -273,6 +308,7 @@ impl Browser {
 
 pub struct Page {
     inner: CdpPage,
+    _sim_cancel: tokio::sync::watch::Sender<bool>,
 }
 
 impl Page {
@@ -407,6 +443,138 @@ impl Page {
     /// Access underlying chromiumoxide Page for raw CDP.
     pub fn cdp(&self) -> &CdpPage {
         &self.inner
+    }
+}
+
+// ── Human Simulation (built-in) ────────────────────────────────
+//
+// Every Page auto-starts a background task that generates realistic mouse
+// movement + scrolling via CDP. The task lives as long as the Page — when
+// the Page is dropped or the browser closes, the simulation stops.
+// Safe: only moves the cursor and scrolls — never clicks or types.
+
+/// Core simulation loop — runs until cancelled.
+async fn human_loop(
+    page: CdpPage,
+    mut cancel: tokio::sync::watch::Receiver<bool>,
+    vw: f64,
+    vh: f64,
+) {
+    let mut rng = FastRng::new(nanos() ^ 0xDEAD_BEEF);
+    let mut mouse_x: f64 = vw / 2.0;
+    let mut mouse_y: f64 = vh / 2.0;
+
+    loop {
+        if *cancel.borrow() {
+            break;
+        }
+
+        // Pick random action weighted: 60% mouse move, 25% scroll, 15% idle
+        let roll = rng.next_range(100);
+        if roll < 60 {
+            // Mouse move along a bezier curve to a random target
+            let tx = rng.next_f64() * (vw - 40.0) + 20.0;
+            let ty = rng.next_f64() * (vh - 40.0) + 20.0;
+            if bezier_move(&page, &mut cancel, &mut rng, mouse_x, mouse_y, tx, ty)
+                .await
+                .is_err()
+            {
+                break;
+            }
+            mouse_x = tx;
+            mouse_y = ty;
+        } else if roll < 85 {
+            // Scroll: small random amount, sometimes up
+            let direction = if rng.next_range(100) < 80 { 1.0 } else { -1.0 };
+            let amount = (rng.next_range(200) as f64 + 50.0) * direction;
+            let mut ev = DispatchMouseEventParams::new(
+                DispatchMouseEventType::MouseWheel,
+                mouse_x,
+                mouse_y,
+            );
+            ev.delta_x = Some(0.0);
+            ev.delta_y = Some(amount);
+            let _ = page.execute(ev).await;
+        } else {
+            // Idle — just wait (simulates reading)
+        }
+
+        // Pause between actions: 800ms–4s
+        let delay = rng.next_range(3200) as u64 + 800;
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(delay)) => {}
+            _ = cancel.changed() => break,
+        }
+    }
+}
+
+/// Move mouse along a quadratic bezier curve from (sx,sy) to (tx,ty).
+async fn bezier_move(
+    page: &CdpPage,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+    rng: &mut FastRng,
+    sx: f64,
+    sy: f64,
+    tx: f64,
+    ty: f64,
+) -> std::result::Result<(), ()> {
+    // Random control point (gives the curve a natural arc)
+    let cx = (sx + tx) / 2.0 + (rng.next_f64() - 0.5) * 200.0;
+    let cy = (sy + ty) / 2.0 + (rng.next_f64() - 0.5) * 200.0;
+
+    let steps = rng.next_range(10) + 8; // 8–17 intermediate points
+    for i in 1..=steps {
+        if *cancel.borrow() {
+            return Err(());
+        }
+        let t = i as f64 / steps as f64;
+        let inv = 1.0 - t;
+        // Quadratic bezier: B(t) = (1-t)²·S + 2(1-t)t·C + t²·T
+        let x = inv * inv * sx + 2.0 * inv * t * cx + t * t * tx;
+        let y = inv * inv * sy + 2.0 * inv * t * cy + t * t * ty;
+
+        let ev =
+            DispatchMouseEventParams::new(DispatchMouseEventType::MouseMoved, x, y);
+        let _ = page.execute(ev).await;
+
+        // Inter-step delay: 8–25ms (realistic mouse polling rate)
+        let step_delay = rng.next_range(17) as u64 + 8;
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(step_delay)) => {}
+            _ = cancel.changed() => return Err(()),
+        }
+    }
+    Ok(())
+}
+
+// ── Fast PRNG ──────────────────────────────────────────────────
+
+struct FastRng {
+    state: u64,
+}
+
+impl FastRng {
+    fn new(seed: u64) -> Self {
+        Self {
+            state: if seed == 0 { 0x1234_5678_9ABC_DEF0 } else { seed },
+        }
+    }
+
+    fn next(&mut self) -> u64 {
+        let mut s = self.state;
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        self.state = s;
+        s
+    }
+
+    fn next_range(&mut self, max: u32) -> u32 {
+        (self.next() % max as u64) as u32
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        (self.next() & 0x000F_FFFF_FFFF_FFFF) as f64 / (0x0010_0000_0000_0000u64 as f64)
     }
 }
 

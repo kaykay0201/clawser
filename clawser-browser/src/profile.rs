@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const CHROME_MAJOR: &str = "134";
 const CHROME_FULL: &str = "134.0.6998.0";
-const GREASE_BRAND: &str = "Not-A.Brand";
+const GREASE_BRAND: &str = "Not:A-Brand";
 
 const NV: &str = "Google Inc. (NVIDIA)";
 const AMD: &str = "Google Inc. (AMD)";
@@ -248,7 +248,7 @@ pub fn generate_config_json(profile_index: usize, seed: u64) -> String {
                 "brands": [
                     { "brand": "Chromium", "version": CHROME_MAJOR },
                     { "brand": "Google Chrome", "version": CHROME_MAJOR },
-                    { "brand": GREASE_BRAND, "version": "8" }
+                    { "brand": GREASE_BRAND, "version": "24" }
                 ],
                 "mobile": false,
                 "platform": "Windows",
@@ -259,7 +259,7 @@ pub fn generate_config_json(profile_index: usize, seed: u64) -> String {
                 "full_version_list": [
                     { "brand": "Chromium", "version": CHROME_FULL },
                     { "brand": "Google Chrome", "version": CHROME_FULL },
-                    { "brand": GREASE_BRAND, "version": "8.0.0.0" }
+                    { "brand": GREASE_BRAND, "version": "24.0.0.0" }
                 ]
             }
         },
